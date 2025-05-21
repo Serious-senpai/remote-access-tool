@@ -1,0 +1,28 @@
+# Reference: https://docs.docker.com/reference/compose-file/
+name: remote-access-tool
+
+services:
+  server:
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+    container_name: server
+    hostname: server
+
+  ubuntu-client:
+    build:
+      args:
+        IMAGE: ubuntu:24.04
+      context: .
+      dockerfile: client/Dockerfile
+    container_name: ubuntu-client
+    hostname: ubuntu-client
+
+  centos-client:
+    build:
+      args:
+        IMAGE: centos:7
+      context: .
+      dockerfile: client/Dockerfile
+    container_name: centos-client
+    hostname: centos-client

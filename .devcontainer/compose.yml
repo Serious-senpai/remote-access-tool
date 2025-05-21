@@ -1,0 +1,25 @@
+# Reference: https://docs.docker.com/reference/compose-file/
+name: remote-access-tool
+
+services:
+  ubuntu:
+    build:
+      context: ..
+      dockerfile: .devcontainer/Dockerfile
+    command: bash -c "sleep infinity"
+    container_name: ubuntu
+    environment:
+      RUST_BACKTRACE: "1"
+    hostname: ubuntu
+    volumes:
+      - ..:/workspaces/remote-access-tool
+    working_dir: /workspaces/remote-access-tool
+
+  centos:
+    container_name: centos
+    command: bash -c "sleep infinity"
+    hostname: centos
+    image: centos:7
+    volumes:
+      - ..:/workspaces/remote-access-tool
+    working_dir: /workspaces/remote-access-tool

@@ -1,0 +1,26 @@
+{
+    "name": "devcontainer",
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "ms-azuretools.vscode-docker",
+                "rust-lang.rust-analyzer"
+            ],
+            "settings": {
+                "editor.formatOnSave": true,
+                "editor.tabSize": 4,
+                "extensions.ignoreRecommendations": false,
+                "git.autorefresh": true,
+                "rust-analyzer.linkedProjects": [
+                    "${containerWorkspaceFolder}/Cargo.toml" // Only need the workspace root
+                ],
+                "rust-analyzer.rustfmt.extraArgs": [
+                    "+nightly" // For some options in rustfmt.toml
+                ]
+            }
+        }
+    },
+    "dockerComposeFile": "compose.yml",
+    "service": "ubuntu",
+    "workspaceFolder": "/workspaces/remote-access-tool"
+}

@@ -1,2 +1,2 @@
 # remote-access-tool
-Remote access tool for Ubuntu
+Remote access tool for Ubuntu/CentOS
