@@ -1,18 +1,18 @@
 use std::error::Error;
 
 use rsa::sha2::{Digest, Sha256};
-use rsa::{BigUint, RsaPublicKey};
+use rsa::RsaPublicKey;
 use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader};
 
-use crate::errors::IntegrityError;
+use crate::errors::RuntimeError;
 use crate::payloads::format::PayloadFormat;
-use crate::utils::{read_biguint, read_string, write_biguint, write_string};
+use crate::utils::{read_biguint, read_string, write_string};
 
 #[derive(Debug, Clone)]
 pub struct KexEcdhReply {
     k_s: Vec<u8>,
     pub server_host_key: RsaPublicKey,
-    pub public_key: Vec<u8>,
+    pub public_key: [u8; 32],
     pub signature: Vec<u8>,
 }
 
@@ -32,8 +32,8 @@ impl PayloadFormat for KexEcdhReply {
         let mut reader = BufReader::new(k_s.as_slice());
         for &c in Self::K_S_PREFIX {
             if reader.read_u8().await? != c {
-                return Err(IntegrityError::from_message(format!(
-                    "Expected {:?}",
+                return Err(RuntimeError::new(format!(
+                    "Expected \"{:?}\" for KEX_ECDH_REPLY",
                     Self::K_S_PREFIX
                 )))?;
             }
@@ -43,26 +43,27 @@ impl PayloadFormat for KexEcdhReply {
         let server_host_key = RsaPublicKey::new(n, e)?;
 
         // Read Q_S
-        let q_s = read_string(stream).await?;
+        let public_key = read_string(stream).await?;
 
         // Read SIG_S
         let sig_s = read_string(stream).await?;
         let mut reader = BufReader::new(sig_s.as_slice());
         for &c in Self::SIG_S_PREFIX {
             if reader.read_u8().await? != c {
-                return Err(IntegrityError::from_message(format!(
-                    "Expected {:?}",
+                return Err(RuntimeError::new(format!(
+                    "Expected \"{:?}\" for KEX_ECDH_REPLY",
                     Self::SIG_S_PREFIX
                 )))?;
             }
         }
         let signature = read_string(&mut reader).await?;
-        eprintln!("signature length: {:?}", signature.len());
 
         Ok(Self {
             k_s,
             server_host_key,
-            public_key: q_s,
+            public_key: public_key
+                .try_into()
+                .map_err(|_| RuntimeError::new("Invalid public key length"))?,
             signature,
         })
     }
@@ -73,9 +74,8 @@ impl PayloadFormat for KexEcdhReply {
         S: AsyncWriteExt + Unpin,
     {
         stream.write_u8(Self::OPCODE).await?;
-        write_string(stream, &self.public_key).await?;
 
-        Ok(())
+        todo!();
     }
 }
 
@@ -110,8 +110,7 @@ impl KexEcdhReply {
         write_string(&mut buffer, &self.public_key).await?;
 
         // Shared secret
-        let value = BigUint::from_bytes_le(shared_secret);
-        write_biguint(&mut buffer, &value).await?;
+        write_string(&mut buffer, &shared_secret).await?;
 
         Ok(Sha256::digest(&buffer).into())
     }

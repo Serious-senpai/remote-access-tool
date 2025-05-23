@@ -32,4 +32,7 @@ ln -sf $ROOT_DIR/keys/openssh-portable/sshd-auth /usr/local/libexec/sshd-auth
 ln -sf $ROOT_DIR/keys/openssh-portable/sshd-session /usr/local/libexec/sshd-session
 yes | ssh-keygen -t rsa -f $ROOT_DIR/keys/host -N ""
 chmod 600 $ROOT_DIR/keys/host
-$ROOT_DIR/keys/openssh-portable/sshd -De -f $ROOT_DIR/scripts/sshd_config -h $ROOT_DIR/keys/host
+
+command="$ROOT_DIR/keys/openssh-portable/sshd -De -f $ROOT_DIR/scripts/sshd_config -h $ROOT_DIR/keys/host"
+echo "Executing \"$command\" and logging to $ROOT_DIR/keys/openssh-logs.txt"
+$command 2>$ROOT_DIR/keys/openssh-logs.txt

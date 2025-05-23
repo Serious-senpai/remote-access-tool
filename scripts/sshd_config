@@ -1,1 +1,2 @@
 LogLevel DEBUG3
+KexAlgorithms curve25519-sha256

@@ -1,11 +1,12 @@
 use tokio::io::AsyncWriteExt;
 
+use crate::errors::RuntimeError;
 use crate::payloads::format::PayloadFormat;
 use crate::utils::{read_string, write_string};
 
 #[derive(Debug, Clone)]
 pub struct KexEcdhInit {
-    pub public_key: Vec<u8>,
+    pub public_key: [u8; 32],
 }
 
 impl PayloadFormat for KexEcdhInit {
@@ -21,7 +22,11 @@ impl PayloadFormat for KexEcdhInit {
 
         let public_key = read_string(stream).await?;
 
-        Ok(Self { public_key })
+        Ok(Self {
+            public_key: public_key
+                .try_into()
+                .map_err(|_| RuntimeError::new("Invalid public key length"))?,
+        })
     }
 
     async fn to_stream<S>(&self, stream: &mut S) -> Result<(), Box<dyn std::error::Error>>
@@ -37,7 +42,7 @@ impl PayloadFormat for KexEcdhInit {
 }
 
 impl KexEcdhInit {
-    pub fn new(public_key: Vec<u8>) -> Self {
+    pub fn new(public_key: [u8; 32]) -> Self {
         Self { public_key }
     }
 }

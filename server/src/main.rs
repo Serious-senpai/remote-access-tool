@@ -1,7 +1,5 @@
 use std::error::Error;
 
-use digest::Digest;
-use errors::RuntimeError;
 use rsa::pkcs1v15::{Signature, VerifyingKey};
 use rsa::sha2::Sha512;
 use rsa::signature::Verifier;
@@ -15,7 +13,6 @@ use payloads::kex_ecdh_init::KexEcdhInit;
 use payloads::kex_ecdh_reply::KexEcdhReply;
 use payloads::kexinit::KexInit;
 use sshkey::Ed25519KeyPair;
-use utils::x25519;
 
 mod config;
 mod errors;
@@ -90,7 +87,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let key_pair = Ed25519KeyPair::new();
 
-    let kex_ecdh_init = KexEcdhInit::new(key_pair.public_key.to_vec());
+    let kex_ecdh_init = KexEcdhInit::new(key_pair.public_key.clone());
     let packet = kex_ecdh_init.to_packet().await?;
 
     packet.to_stream(&mut stream).await?;
@@ -104,31 +101,17 @@ async fn main() -> Result<(), Box<dyn Error>> {
         kex_ecdh_reply.server_host_key.n(),
     );
 
-    let shared_secret = x25519(
-        key_pair
-            .private_seed
-            .try_into()
-            .map_err(|_| RuntimeError::new("Invalid private key"))?,
-        kex_ecdh_reply
-            .public_key
-            .clone()
-            .try_into()
-            .map_err(|_| RuntimeError::new("Invalid public key"))?,
+    let shared_secret = Ed25519KeyPair::x25519(
+        key_pair.private_seed.clone(),
+        kex_ecdh_reply.public_key.clone(),
     );
 
-    eprintln!("client_id = {:?}", config::SSH_ID_STRING);
-    eprintln!("server_id = {:?}", server_id_string);
-    eprintln!("client_kexinit = {:?}", &client_kexinit_packet.payload[1..]);
-    eprintln!("server_kexinit = {:?}", &server_kexinit_packet.payload[1..]);
-    eprintln!("client_public_key = {:?}", key_pair.public_key);
-    eprintln!("server_public_key = {:?}", kex_ecdh_reply.public_key);
-    eprintln!("shared_secret = {:?}", shared_secret);
     let exhash = kex_ecdh_reply
         .exchange_hash(
             config::SSH_ID_STRING.as_bytes(),
             server_id_string.as_bytes(),
-            &client_kexinit_packet.payload[1..],
-            &server_kexinit_packet.payload[1..],
+            &client_kexinit_packet.payload,
+            &server_kexinit_packet.payload,
             &key_pair.public_key,
             &shared_secret,
         )
@@ -136,10 +119,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let verify_key = VerifyingKey::<Sha512>::new(kex_ecdh_reply.server_host_key.clone());
     let signature = Signature::try_from(kex_ecdh_reply.signature.as_slice())?;
-    eprintln!("Signature: {:?}", kex_ecdh_reply.signature);
 
-    let hash = Sha512::digest(&exhash);
-    eprintln!("{:?}", verify_key.verify(&hash, &signature));
+    if let Err(e) = verify_key.verify(&exhash, &signature) {
+        println!(
+            "Error when verifying signature: {:?}\nExchange hash is {:x?}",
+            e, exhash
+        );
+        return Ok(());
+    }
 
     Ok(())
 }
