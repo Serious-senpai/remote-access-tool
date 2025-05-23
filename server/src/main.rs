@@ -120,13 +120,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let verify_key = VerifyingKey::<Sha512>::new(kex_ecdh_reply.server_host_key.clone());
     let signature = Signature::try_from(kex_ecdh_reply.signature.as_slice())?;
 
-    if let Err(e) = verify_key.verify(&exhash, &signature) {
-        println!(
-            "Error when verifying signature: {:?}\nExchange hash is {:x?}",
-            e, exhash
-        );
-        return Ok(());
-    }
+    verify_key.verify(&exhash, &signature)?;
 
     Ok(())
 }

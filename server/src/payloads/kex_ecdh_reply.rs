@@ -1,12 +1,12 @@
 use std::error::Error;
 
 use rsa::sha2::{Digest, Sha256};
-use rsa::RsaPublicKey;
+use rsa::{BigUint, RsaPublicKey};
 use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader};
 
 use crate::errors::RuntimeError;
 use crate::payloads::format::PayloadFormat;
-use crate::utils::{read_biguint, read_string, write_string};
+use crate::utils::{read_biguint, read_string, write_biguint, write_string};
 
 #[derive(Debug, Clone)]
 pub struct KexEcdhReply {
@@ -110,8 +110,10 @@ impl KexEcdhReply {
         write_string(&mut buffer, &self.public_key).await?;
 
         // Shared secret
-        write_string(&mut buffer, &shared_secret).await?;
+        let shared_secret_value = BigUint::from_bytes_be(shared_secret);
+        write_biguint(&mut buffer, &shared_secret_value).await?;
 
+        // eprintln!("buffer = {:?}", buffer);
         Ok(Sha256::digest(&buffer).into())
     }
 }
