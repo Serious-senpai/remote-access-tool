@@ -4,9 +4,9 @@ use rsa::sha2::{Digest, Sha256};
 use rsa::{BigUint, RsaPublicKey};
 use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader};
 
-use crate::errors::RuntimeError;
-use crate::payloads::format::PayloadFormat;
-use crate::utils::{read_biguint, read_string, write_biguint, write_string};
+use super::super::errors::RuntimeError;
+use super::super::utils::{read_biguint, read_string, write_biguint, write_string};
+use super::PayloadFormat;
 
 #[derive(Debug, Clone)]
 pub struct KexEcdhReply {
@@ -19,20 +19,20 @@ pub struct KexEcdhReply {
 impl PayloadFormat for KexEcdhReply {
     const OPCODE: u8 = 31;
 
-    async fn from_stream<S>(stream: &mut S) -> Result<Self, Box<dyn std::error::Error>>
+    async fn from_stream<S>(stream: &mut S) -> Result<Self, Box<dyn Error>>
     where
         Self: Sized,
         S: tokio::io::AsyncReadExt + Unpin,
     {
         let opcode = stream.read_u8().await?;
-        Self::check_opcode(opcode)?;
+        Self::_check_opcode(opcode)?;
 
         // Read K_S
         let k_s = read_string(stream).await?;
         let mut reader = BufReader::new(k_s.as_slice());
         for &c in Self::K_S_PREFIX {
             if reader.read_u8().await? != c {
-                return Err(RuntimeError::new(format!(
+                Err(RuntimeError::new(format!(
                     "Expected \"{:?}\" for KEX_ECDH_REPLY",
                     Self::K_S_PREFIX
                 )))?;
@@ -50,7 +50,7 @@ impl PayloadFormat for KexEcdhReply {
         let mut reader = BufReader::new(sig_s.as_slice());
         for &c in Self::SIG_S_PREFIX {
             if reader.read_u8().await? != c {
-                return Err(RuntimeError::new(format!(
+                Err(RuntimeError::new(format!(
                     "Expected \"{:?}\" for KEX_ECDH_REPLY",
                     Self::SIG_S_PREFIX
                 )))?;
@@ -68,7 +68,7 @@ impl PayloadFormat for KexEcdhReply {
         })
     }
 
-    async fn to_stream<S>(&self, stream: &mut S) -> Result<(), Box<dyn std::error::Error>>
+    async fn to_stream<S>(&self, stream: &mut S) -> Result<(), Box<dyn Error>>
     where
         Self: Sized,
         S: AsyncWriteExt + Unpin,
@@ -113,7 +113,6 @@ impl KexEcdhReply {
         let shared_secret_value = BigUint::from_bytes_be(shared_secret);
         write_biguint(&mut buffer, &shared_secret_value).await?;
 
-        // eprintln!("buffer = {:?}", buffer);
         Ok(Sha256::digest(&buffer).into())
     }
 }

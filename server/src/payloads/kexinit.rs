@@ -1,10 +1,12 @@
+use std::error::Error;
+
 use rand::rngs::StdRng;
 use rand::{RngCore, SeedableRng};
 use tokio::io::AsyncWriteExt;
 
-use crate::config;
-use crate::payloads::format::PayloadFormat;
-use crate::utils::{read_string, write_string};
+use super::super::config;
+use super::super::utils::{read_string, write_string};
+use super::PayloadFormat;
 
 #[derive(Debug, Clone)]
 pub struct KexInit {
@@ -26,13 +28,13 @@ pub struct KexInit {
 impl PayloadFormat for KexInit {
     const OPCODE: u8 = 20;
 
-    async fn from_stream<S>(stream: &mut S) -> Result<Self, Box<dyn std::error::Error>>
+    async fn from_stream<S>(stream: &mut S) -> Result<Self, Box<dyn Error>>
     where
         Self: Sized,
         S: tokio::io::AsyncReadExt + Unpin,
     {
         let opcode = stream.read_u8().await?;
-        Self::check_opcode(opcode)?;
+        Self::_check_opcode(opcode)?;
 
         let mut cookie = vec![0u8; 16];
         stream.read_exact(&mut cookie).await?;
@@ -100,7 +102,7 @@ impl PayloadFormat for KexInit {
         })
     }
 
-    async fn to_stream<S>(&self, stream: &mut S) -> Result<(), Box<dyn std::error::Error>>
+    async fn to_stream<S>(&self, stream: &mut S) -> Result<(), Box<dyn Error>>
     where
         Self: Sized,
         S: AsyncWriteExt + Unpin,

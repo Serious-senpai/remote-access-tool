@@ -2,17 +2,13 @@ use std::error::Error;
 
 use tokio::io::AsyncWriteExt;
 
-use super::super::errors::RuntimeError;
-use super::super::utils::{read_string, write_string};
 use super::PayloadFormat;
 
 #[derive(Debug, Clone)]
-pub struct KexEcdhInit {
-    pub public_key: [u8; 32],
-}
+pub struct NewKeys {}
 
-impl PayloadFormat for KexEcdhInit {
-    const OPCODE: u8 = 30;
+impl PayloadFormat for NewKeys {
+    const OPCODE: u8 = 21;
 
     async fn from_stream<S>(stream: &mut S) -> Result<Self, Box<dyn Error>>
     where
@@ -22,13 +18,7 @@ impl PayloadFormat for KexEcdhInit {
         let opcode = stream.read_u8().await?;
         Self::_check_opcode(opcode)?;
 
-        let public_key = read_string(stream).await?;
-
-        Ok(Self {
-            public_key: public_key
-                .try_into()
-                .map_err(|_| RuntimeError::new("Invalid public key length"))?,
-        })
+        Ok(Self {})
     }
 
     async fn to_stream<S>(&self, stream: &mut S) -> Result<(), Box<dyn Error>>
@@ -37,8 +27,6 @@ impl PayloadFormat for KexEcdhInit {
         S: AsyncWriteExt + Unpin,
     {
         stream.write_u8(Self::OPCODE).await?;
-        write_string(stream, &self.public_key).await?;
-
         Ok(())
     }
 }

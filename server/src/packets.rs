@@ -1,68 +1,87 @@
 use std::error::Error;
+use std::marker::PhantomData;
 
-use rand::rngs::StdRng;
-use rand::{RngCore, SeedableRng};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-pub struct SSHPacket {
+use super::cipher::{Cipher, CipherCtx};
+
+pub const MIN_PACKET_LENGTH: usize = 16;
+pub const MIN_PADDING_LENGTH: usize = 4;
+
+#[derive(Debug, Clone)]
+pub struct Packet<C>
+where
+    C: Cipher,
+{
     pub packet_length: u32,
     pub padding_length: u8,
     pub payload: Vec<u8>,
     pub random_padding: Vec<u8>,
-    pub mac: Vec<u8>, // chacha20-poly1305@openssh.com does not need MAC
+    phantom: PhantomData<C>,
 }
 
-impl SSHPacket {
-    pub fn from_payload(payload: Vec<u8>) -> Self {
-        let mut random_padding = vec![0u8; 4];
-        while (5 + payload.len() + random_padding.len()) % 8 != 0 {
-            random_padding.push(0);
-        }
-
-        let mut rng = StdRng::from_os_rng();
-        rng.fill_bytes(&mut random_padding);
-
-        let packet_length = (1 + payload.len() + random_padding.len()) as u32;
+impl<C> Packet<C>
+where
+    C: Cipher,
+{
+    pub fn new(
+        packet_length: u32,
+        padding_length: u8,
+        payload: Vec<u8>,
+        random_padding: Vec<u8>,
+    ) -> Self {
         Self {
             packet_length,
-            padding_length: random_padding.len() as u8,
-            payload: payload,
+            padding_length,
+            payload,
             random_padding,
-            mac: vec![],
+            phantom: PhantomData,
         }
     }
 
-    pub async fn from_stream<S>(stream: &mut S) -> Result<Self, Box<dyn Error>>
+    /// Generate a new SSH packet from a payload
+    pub async fn from_payload(
+        _ctx: &CipherCtx<'_>,
+        payload: Vec<u8>,
+    ) -> Result<Self, Box<dyn Error>> {
+        let random_padding = C::create_padding(payload.len());
+        let packet_length = (1 + payload.len() + random_padding.len()) as u32;
+
+        Ok(Self::new(
+            packet_length,
+            random_padding.len() as u8,
+            payload,
+            random_padding,
+        ))
+    }
+
+    /// Read an SSH packet from a stream.
+    pub async fn from_stream<S>(ctx: &CipherCtx<'_>, stream: &mut S) -> Result<Self, Box<dyn Error>>
     where
         S: AsyncReadExt + Unpin,
     {
-        let packet_length = stream.read_u32().await?;
-        let padding_length = stream.read_u8().await?;
-
-        let mut payload = vec![0u8; packet_length as usize - padding_length as usize - 1];
-        stream.read_exact(&mut payload).await?;
-
-        let mut random_padding = vec![0u8; padding_length as usize];
-        stream.read_exact(&mut random_padding).await?;
-
-        Ok(Self {
-            packet_length,
-            padding_length,
-            payload: payload.to_vec(),
-            random_padding: random_padding.to_vec(),
-            mac: vec![],
-        })
+        C::decrypt(ctx, stream).await
     }
 
-    pub async fn to_stream<S>(&self, stream: &mut S) -> Result<(), Box<dyn Error>>
+    /// Write the entire SSH packet to a stream.
+    pub async fn to_stream<S>(
+        &self,
+        ctx: &CipherCtx<'_>,
+        stream: &mut S,
+    ) -> Result<(), Box<dyn Error>>
     where
         S: AsyncWriteExt + Unpin,
     {
-        stream.write_u32(self.packet_length).await?;
-        stream.write_u8(self.padding_length).await?;
-        stream.write_all(&self.payload).await?;
-        stream.write_all(&self.random_padding).await?;
-        stream.write_all(&self.mac).await?;
+        let (encrypted, mac) = C::encrypt(
+            ctx,
+            self.packet_length,
+            self.padding_length,
+            &self.payload,
+            &self.random_padding,
+        )
+        .await?;
+        stream.write_all(&encrypted).await?;
+        stream.write_all(&mac).await?;
         stream.flush().await?;
         Ok(())
     }
