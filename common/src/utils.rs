@@ -28,6 +28,12 @@ where
     Ok(())
 }
 
+pub async fn write_string_vec(writer: &mut Vec<u8>, string: &[u8]) {
+    write_string(writer, string)
+        .await
+        .expect("Writing to a vector should never fail")
+}
+
 pub async fn read_biguint<S>(reader: &mut S) -> Result<BigUint, Box<dyn Error>>
 where
     S: AsyncReadExt + Unpin,
@@ -53,4 +59,10 @@ where
 
     write_string(writer, &buffer).await?;
     Ok(())
+}
+
+pub async fn write_biguint_vec(writer: &mut Vec<u8>, biguint: &BigUint) {
+    write_biguint(writer, biguint)
+        .await
+        .expect("Writing to a vector should never fail")
 }

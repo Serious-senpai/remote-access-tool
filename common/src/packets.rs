@@ -3,7 +3,7 @@ use std::marker::PhantomData;
 
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-use super::cipher::{Cipher, CipherCtx};
+use super::cipher::encryption::{Cipher, CipherCtx};
 
 pub const MIN_PACKET_LENGTH: usize = 16;
 pub const MIN_PADDING_LENGTH: usize = 4;
@@ -41,7 +41,7 @@ where
 
     /// Generate a new SSH packet from a payload
     pub async fn from_payload(
-        _ctx: &CipherCtx<'_>,
+        _ctx: &CipherCtx<C>,
         payload: Vec<u8>,
     ) -> Result<Self, Box<dyn Error>> {
         let random_padding = C::create_padding(payload.len());
@@ -56,9 +56,9 @@ where
     }
 
     /// Read an SSH packet from a stream.
-    pub async fn from_stream<S>(ctx: &CipherCtx<'_>, stream: &mut S) -> Result<Self, Box<dyn Error>>
+    pub async fn from_stream<S>(ctx: &CipherCtx<C>, stream: &mut S) -> Result<Self, Box<dyn Error>>
     where
-        S: AsyncReadExt + Unpin,
+        S: AsyncReadExt + Send + Unpin,
     {
         C::decrypt(ctx, stream).await
     }
@@ -66,7 +66,7 @@ where
     /// Write the entire SSH packet to a stream.
     pub async fn to_stream<S>(
         &self,
-        ctx: &CipherCtx<'_>,
+        ctx: &CipherCtx<C>,
         stream: &mut S,
     ) -> Result<(), Box<dyn Error>>
     where
@@ -84,5 +84,9 @@ where
         stream.write_all(&mac).await?;
         stream.flush().await?;
         Ok(())
+    }
+
+    fn peek_opcode(&self) -> Option<u8> {
+        self.payload.first().cloned()
     }
 }

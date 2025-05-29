@@ -1,6 +1,7 @@
 use std::error::Error;
 
-use tokio::io::AsyncWriteExt;
+use async_trait::async_trait;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 use super::super::utils::{read_string, write_string};
 use super::PayloadFormat;
@@ -11,20 +12,20 @@ pub struct UserauthFailure {
     pub partial_success: bool,
 }
 
+#[async_trait]
 impl PayloadFormat for UserauthFailure {
     const OPCODE: u8 = 51;
 
     async fn from_stream<S>(stream: &mut S) -> Result<Self, Box<dyn Error>>
     where
+        S: AsyncReadExt + Send + Unpin,
         Self: Sized,
-        S: tokio::io::AsyncReadExt + Unpin,
     {
         let opcode = stream.read_u8().await?;
         Self::_check_opcode(opcode)?;
 
         let methods = read_string(stream).await?;
-        let methods = String::from_utf8(methods)
-            .map_err(|_| "Invalid UTF-8 in methods")?
+        let methods = String::from_utf8(methods)?
             .split(',')
             .map(String::from)
             .collect();
@@ -39,8 +40,8 @@ impl PayloadFormat for UserauthFailure {
 
     async fn to_stream<S>(&self, stream: &mut S) -> Result<(), Box<dyn Error>>
     where
+        S: AsyncWriteExt + Send + Unpin,
         Self: Sized,
-        S: AsyncWriteExt + Unpin,
     {
         stream.write_u8(Self::OPCODE).await?;
         write_string(stream, &self.methods.join(",").as_bytes()).await?;

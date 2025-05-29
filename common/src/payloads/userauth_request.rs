@@ -1,6 +1,7 @@
 use std::error::Error;
 
-use tokio::io::AsyncWriteExt;
+use async_trait::async_trait;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 use super::super::utils::{read_string, write_string};
 use super::PayloadFormat;
@@ -75,13 +76,14 @@ pub struct UserauthRequest {
     pub method_name: UserauthMethod,
 }
 
+#[async_trait]
 impl PayloadFormat for UserauthRequest {
     const OPCODE: u8 = 50;
 
     async fn from_stream<S>(stream: &mut S) -> Result<Self, Box<dyn Error>>
     where
+        S: AsyncReadExt + Send + Unpin,
         Self: Sized,
-        S: tokio::io::AsyncReadExt + Unpin,
     {
         let opcode = stream.read_u8().await?;
         Self::_check_opcode(opcode)?;
@@ -92,7 +94,8 @@ impl PayloadFormat for UserauthRequest {
         let service_name = read_string(stream).await?;
         let service_name = String::from_utf8(service_name)?;
 
-        let method_name = match read_string(stream).await?.as_slice() {
+        let method_name = read_string(stream).await?;
+        let method_name = match method_name.as_slice() {
             b"publickey" => {
                 assert_eq!(stream.read_u8().await?, 1);
                 let algorithm = read_string(stream).await?;
@@ -142,8 +145,8 @@ impl PayloadFormat for UserauthRequest {
 
     async fn to_stream<S>(&self, stream: &mut S) -> Result<(), Box<dyn Error>>
     where
+        S: AsyncWriteExt + Send + Unpin,
         Self: Sized,
-        S: AsyncWriteExt + Unpin,
     {
         stream.write_u8(Self::OPCODE).await?;
         write_string(stream, self.username.as_bytes()).await?;

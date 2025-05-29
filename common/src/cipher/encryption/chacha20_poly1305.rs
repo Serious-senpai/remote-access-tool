@@ -1,20 +1,27 @@
 use std::error::Error;
 
+use async_trait::async_trait;
 use chacha20::cipher::{
     BlockSizeUser, KeyInit, KeyIvInit, StreamCipher, StreamCipherSeek, Unsigned,
 };
 use chacha20::{ChaCha20Legacy, ChaCha20LegacyCore};
+use log::debug;
 use poly1305::Poly1305;
 use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader};
 
-use super::super::errors::RuntimeError;
-use super::super::packets::{Packet, MIN_PACKET_LENGTH, MIN_PADDING_LENGTH};
+use super::super::super::errors::RuntimeError;
+use super::super::super::packets::{Packet, MIN_PACKET_LENGTH, MIN_PADDING_LENGTH};
 use super::{Cipher, CipherCtx};
 
 #[derive(Debug, Clone)]
 pub struct ChaCha20Poly1305 {}
 
+#[async_trait]
 impl Cipher for ChaCha20Poly1305 {
+    const IV_SIZE: usize = 0;
+    const ENC_SIZE: usize = 64;
+    const INT_SIZE: usize = 0;
+
     fn create_padding(payload_size: usize) -> Vec<u8> {
         let block_size = 8;
         let current_size = 1 + payload_size;
@@ -32,12 +39,15 @@ impl Cipher for ChaCha20Poly1305 {
     }
 
     async fn encrypt(
-        ctx: &CipherCtx<'_>,
+        ctx: &CipherCtx<Self>,
         packet_length: u32,
         padding_length: u8,
         payload: &[u8],
         random_padding: &[u8],
-    ) -> Result<(Vec<u8>, Vec<u8>), Box<dyn Error>> {
+    ) -> Result<(Vec<u8>, Vec<u8>), Box<dyn Error>>
+    where
+        Self: Sized,
+    {
         let k_length = ctx.enc_key[32..].to_vec();
         let k_payload = ctx.enc_key[..32].to_vec();
 
@@ -75,9 +85,12 @@ impl Cipher for ChaCha20Poly1305 {
         Ok((buffer, tag.to_vec()))
     }
 
-    async fn decrypt<S>(ctx: &CipherCtx<'_>, stream: &mut S) -> Result<Packet<Self>, Box<dyn Error>>
+    async fn decrypt<S>(
+        ctx: &CipherCtx<Self>,
+        stream: &mut S,
+    ) -> Result<Packet<Self>, Box<dyn Error>>
     where
-        S: AsyncReadExt + Unpin,
+        S: AsyncReadExt + Send + Unpin,
         Self: Sized,
     {
         let k_length = ctx.enc_key[32..].to_vec();
@@ -99,6 +112,7 @@ impl Cipher for ChaCha20Poly1305 {
             .map_err(|_| RuntimeError::new("Packet decryption error"))?;
 
         let packet_length = u32::from_be_bytes(packet_length_buf);
+        debug!("Decrypted packet length {}", packet_length);
 
         if packet_length < MIN_PACKET_LENGTH as u32 {
             Err(RuntimeError::new(format!(

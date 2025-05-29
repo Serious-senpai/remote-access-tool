@@ -1,16 +1,22 @@
 use std::error::Error;
 
+use async_trait::async_trait;
 use rand::rngs::StdRng;
 use rand::{RngCore, SeedableRng};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-use super::super::packets::{Packet, MIN_PACKET_LENGTH, MIN_PADDING_LENGTH};
+use super::super::super::packets::{Packet, MIN_PACKET_LENGTH, MIN_PADDING_LENGTH};
 use super::{Cipher, CipherCtx};
 
 #[derive(Debug, Clone)]
 pub struct NoneCipher {}
 
+#[async_trait]
 impl Cipher for NoneCipher {
+    const IV_SIZE: usize = 0;
+    const ENC_SIZE: usize = 0;
+    const INT_SIZE: usize = 0;
+
     fn create_padding(payload_size: usize) -> Vec<u8> {
         let block_size = 8;
         let current_size = 5 + payload_size;
@@ -31,12 +37,15 @@ impl Cipher for NoneCipher {
     }
 
     async fn encrypt(
-        _ctx: &CipherCtx<'_>,
+        _ctx: &CipherCtx<Self>,
         packet_length: u32,
         padding_length: u8,
         payload: &[u8],
         random_padding: &[u8],
-    ) -> Result<(Vec<u8>, Vec<u8>), Box<dyn Error>> {
+    ) -> Result<(Vec<u8>, Vec<u8>), Box<dyn Error>>
+    where
+        Self: Sized,
+    {
         let mut buffer = vec![];
         buffer.write_u32(packet_length).await?;
         buffer.write_u8(padding_length).await?;
@@ -47,11 +56,11 @@ impl Cipher for NoneCipher {
     }
 
     async fn decrypt<S>(
-        _ctx: &CipherCtx<'_>,
+        _ctx: &CipherCtx<Self>,
         stream: &mut S,
     ) -> Result<Packet<Self>, Box<dyn Error>>
     where
-        S: AsyncReadExt + Unpin,
+        S: AsyncReadExt + Send + Unpin,
         Self: Sized,
     {
         Self::extract_raw_packet(stream).await

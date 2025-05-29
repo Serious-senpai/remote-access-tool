@@ -1,8 +1,9 @@
 use std::error::Error;
 
+use async_trait::async_trait;
 use rand::rngs::StdRng;
 use rand::{RngCore, SeedableRng};
-use tokio::io::AsyncWriteExt;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 use super::super::config;
 use super::super::utils::{read_string, write_string};
@@ -25,13 +26,14 @@ pub struct KexInit {
     pub reserved: u32,
 }
 
+#[async_trait]
 impl PayloadFormat for KexInit {
     const OPCODE: u8 = 20;
 
     async fn from_stream<S>(stream: &mut S) -> Result<Self, Box<dyn Error>>
     where
+        S: AsyncReadExt + Send + Unpin,
         Self: Sized,
-        S: tokio::io::AsyncReadExt + Unpin,
     {
         let opcode = stream.read_u8().await?;
         Self::_check_opcode(opcode)?;
@@ -104,8 +106,8 @@ impl PayloadFormat for KexInit {
 
     async fn to_stream<S>(&self, stream: &mut S) -> Result<(), Box<dyn Error>>
     where
+        S: AsyncWriteExt + Send + Unpin,
         Self: Sized,
-        S: AsyncWriteExt + Unpin,
     {
         stream.write_u8(Self::OPCODE).await?;
         stream.write_all(&self.cookie).await?;
