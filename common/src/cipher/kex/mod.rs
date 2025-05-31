@@ -6,13 +6,14 @@ use async_trait::async_trait;
 
 #[async_trait]
 pub trait KexAlgorithm {
-    fn new() -> Self;
+    fn new(comment: impl Into<String>) -> Self;
     fn hash(data: &[u8]) -> Vec<u8>;
     fn shared_secret(
         our_private: Vec<u8>,
         their_public: Vec<u8>,
     ) -> Result<Vec<u8>, Box<dyn Error>>;
 
+    #[allow(clippy::too_many_arguments)]
     async fn exchange_hash(
         client_id: &[u8],
         server_id: &[u8],

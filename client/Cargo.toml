@@ -4,4 +4,8 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+clap = { workspace = true }
+colog = { workspace = true }
+common = { path = "../common" }
+log = { workspace = true }
 tokio = { workspace = true }

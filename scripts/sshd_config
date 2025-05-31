@@ -4,5 +4,3 @@ KexAlgorithms curve25519-sha256
 HostKeyAlgorithms rsa-sha2-512
 Ciphers chacha20-poly1305@openssh.com
 MACs hmac-sha2-512
-
-PasswordAuthentication yes

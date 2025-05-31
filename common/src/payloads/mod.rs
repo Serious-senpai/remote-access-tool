@@ -1,12 +1,10 @@
+pub mod custom;
 pub mod disconnect;
+pub mod ignore;
 pub mod kex_ecdh_init;
 pub mod kex_ecdh_reply;
 pub mod kexinit;
 pub mod newkeys;
-pub mod service_accept;
-pub mod service_request;
-pub mod userauth_failure;
-pub mod userauth_request;
 
 use std::error::Error;
 

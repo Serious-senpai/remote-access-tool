@@ -1,8 +1,7 @@
 use std::error::Error;
 
 use async_trait::async_trait;
-use rand::rngs::StdRng;
-use rand::{RngCore, SeedableRng};
+use rand::RngCore;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 use super::super::config;
@@ -162,9 +161,15 @@ impl PayloadFormat for KexInit {
     }
 }
 
+impl Default for KexInit {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl KexInit {
     pub fn new() -> Self {
-        let mut rng = StdRng::from_os_rng();
+        let mut rng = rand::thread_rng();
         let mut cookie = vec![0u8; 16];
         rng.fill_bytes(&mut cookie);
 

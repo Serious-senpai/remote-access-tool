@@ -1,12 +1,11 @@
 pub mod chacha20_poly1305;
 pub mod none;
 
+use async_trait::async_trait;
+use rsa::BigUint;
+use ssh_key::sha2::Digest;
 use std::error::Error;
 use std::marker::PhantomData;
-
-use async_trait::async_trait;
-use rsa::sha2::Digest;
-use rsa::BigUint;
 use tokio::io::AsyncReadExt;
 
 use super::super::errors::RuntimeError;
@@ -29,24 +28,24 @@ impl<C> CipherCtx<C>
 where
     C: Cipher,
 {
-    pub async fn new<'a, 'b, 'c, K>(
+    pub async fn new<K>(
         seq: u32,
         iv_letter: u8,
         enc_key_letter: u8,
         int_key_letter: u8,
-        shared_secret: &'a [u8],
-        exchange_hash: &'b [u8],
-        session_id: &'c [u8],
+        shared_secret: &[u8],
+        exchange_hash: &[u8],
+        session_id: &[u8],
     ) -> Result<Self, Box<dyn Error>>
     where
         K: KexAlgorithm,
     {
-        async fn construct_base<'a, 'b, 'c, K>(
+        async fn construct_base<K>(
             letter: u8,
             required_length: usize,
-            shared_secret: &'a [u8],
-            exchange_hash: &'b [u8],
-            session_id: &'c [u8],
+            shared_secret: &[u8],
+            exchange_hash: &[u8],
+            session_id: &[u8],
         ) -> Vec<u8>
         where
             K: KexAlgorithm,
@@ -56,10 +55,10 @@ where
             }
 
             let mut buffer = vec![];
-            write_biguint_vec(&mut buffer, &BigUint::from_bytes_be(&shared_secret)).await;
-            buffer.extend_from_slice(&exchange_hash);
+            write_biguint_vec(&mut buffer, &BigUint::from_bytes_be(shared_secret)).await;
+            buffer.extend_from_slice(exchange_hash);
             buffer.push(letter);
-            buffer.extend_from_slice(&session_id);
+            buffer.extend_from_slice(session_id);
 
             let mut last = K::hash(&buffer);
 
@@ -68,8 +67,8 @@ where
 
             while result.len() < required_length {
                 let mut buffer = vec![];
-                write_biguint_vec(&mut buffer, &BigUint::from_bytes_be(&shared_secret)).await;
-                buffer.extend_from_slice(&exchange_hash);
+                write_biguint_vec(&mut buffer, &BigUint::from_bytes_be(shared_secret)).await;
+                buffer.extend_from_slice(exchange_hash);
                 buffer.extend_from_slice(&last);
 
                 last = K::hash(&buffer);
@@ -107,15 +106,9 @@ where
 
         Ok(Self {
             seq,
-            iv: iv
-                .try_into()
-                .map_err(|_| RuntimeError::new("IV expansion error"))?,
-            enc_key: enc_key
-                .try_into()
-                .map_err(|_| RuntimeError::new("Encryption key expansion error"))?,
-            int_key: int_key
-                .try_into()
-                .map_err(|_| RuntimeError::new("Integrity key expansion error"))?,
+            iv,
+            enc_key,
+            int_key,
             _cipher: PhantomData,
         })
     }
@@ -172,10 +165,10 @@ pub trait Cipher {
         H: Digest,
     {
         let mut buffer = vec![];
-        write_biguint_vec(&mut buffer, &BigUint::from_bytes_be(&shared_secret)).await;
-        buffer.extend_from_slice(&exchange_hash);
+        write_biguint_vec(&mut buffer, &BigUint::from_bytes_be(shared_secret)).await;
+        buffer.extend_from_slice(exchange_hash);
         buffer.push(letter);
-        buffer.extend_from_slice(&session_id);
+        buffer.extend_from_slice(session_id);
 
         let mut last = H::digest(buffer);
 
@@ -184,8 +177,8 @@ pub trait Cipher {
 
         while result.len() < L {
             let mut buffer = vec![];
-            write_biguint_vec(&mut buffer, &BigUint::from_bytes_be(&shared_secret)).await;
-            buffer.extend_from_slice(&exchange_hash);
+            write_biguint_vec(&mut buffer, &BigUint::from_bytes_be(shared_secret)).await;
+            buffer.extend_from_slice(exchange_hash);
             buffer.extend_from_slice(&last);
 
             last = H::digest(buffer);

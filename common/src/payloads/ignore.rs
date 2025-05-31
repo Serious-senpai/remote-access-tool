@@ -7,14 +7,13 @@ use super::super::utils::{read_string, write_string};
 use super::PayloadFormat;
 
 #[derive(Debug, Clone)]
-pub struct UserauthFailure {
-    pub methods: Vec<String>,
-    pub partial_success: bool,
+pub struct Ignore {
+    data: Vec<u8>,
 }
 
 #[async_trait]
-impl PayloadFormat for UserauthFailure {
-    const OPCODE: u8 = 51;
+impl PayloadFormat for Ignore {
+    const OPCODE: u8 = 2;
 
     async fn from_stream<S>(stream: &mut S) -> Result<Self, Box<dyn Error>>
     where
@@ -24,18 +23,9 @@ impl PayloadFormat for UserauthFailure {
         let opcode = stream.read_u8().await?;
         Self::_check_opcode(opcode)?;
 
-        let methods = read_string(stream).await?;
-        let methods = String::from_utf8(methods)?
-            .split(',')
-            .map(String::from)
-            .collect();
+        let data = read_string(stream).await?;
 
-        let partial_success = stream.read_u8().await? != 0;
-
-        Ok(Self {
-            methods,
-            partial_success,
-        })
+        Ok(Self { data })
     }
 
     async fn to_stream<S>(&self, stream: &mut S) -> Result<(), Box<dyn Error>>
@@ -44,10 +34,17 @@ impl PayloadFormat for UserauthFailure {
         Self: Sized,
     {
         stream.write_u8(Self::OPCODE).await?;
-        write_string(stream, &self.methods.join(",").as_bytes()).await?;
-        stream
-            .write_u8(if self.partial_success { 1 } else { 0 })
-            .await?;
+        write_string(stream, &self.data).await?;
         Ok(())
+    }
+}
+
+impl Ignore {
+    pub fn new(data: Vec<u8>) -> Self {
+        Self { data }
+    }
+
+    pub fn data(&self) -> &[u8] {
+        &self.data
     }
 }

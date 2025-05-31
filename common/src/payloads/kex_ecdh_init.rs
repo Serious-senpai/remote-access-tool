@@ -3,13 +3,12 @@ use std::error::Error;
 use async_trait::async_trait;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-use super::super::errors::RuntimeError;
 use super::super::utils::{read_string, write_string};
 use super::PayloadFormat;
 
 #[derive(Debug, Clone)]
 pub struct KexEcdhInit {
-    pub public_key: [u8; 32],
+    public_key: Vec<u8>,
 }
 
 #[async_trait]
@@ -26,11 +25,7 @@ impl PayloadFormat for KexEcdhInit {
 
         let public_key = read_string(stream).await?;
 
-        Ok(Self {
-            public_key: public_key
-                .try_into()
-                .map_err(|_| RuntimeError::new("Invalid public key length"))?,
-        })
+        Ok(Self { public_key })
     }
 
     async fn to_stream<S>(&self, stream: &mut S) -> Result<(), Box<dyn Error>>
@@ -42,5 +37,15 @@ impl PayloadFormat for KexEcdhInit {
         write_string(stream, &self.public_key).await?;
 
         Ok(())
+    }
+}
+
+impl KexEcdhInit {
+    pub fn new(public_key: Vec<u8>) -> Self {
+        Self { public_key }
+    }
+
+    pub fn public_key(&self) -> &[u8] {
+        &self.public_key
     }
 }

@@ -1,8 +1,7 @@
 use std::error::Error;
 
 use async_trait::async_trait;
-use rand::rngs::StdRng;
-use rand::{RngCore, SeedableRng};
+use rand::RngCore;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 use super::super::super::packets::{Packet, MIN_PACKET_LENGTH, MIN_PADDING_LENGTH};
@@ -31,7 +30,7 @@ impl Cipher for NoneCipher {
         }
 
         let mut padding = vec![0u8; padding_len];
-        let mut rng = StdRng::from_os_rng();
+        let mut rng = rand::thread_rng();
         rng.fill_bytes(&mut padding);
         padding
     }

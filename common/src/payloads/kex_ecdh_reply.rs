@@ -1,19 +1,21 @@
 use std::error::Error;
+use std::fmt::Write;
 
 use async_trait::async_trait;
+use rsa::sha2::{Digest, Sha256};
 use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader};
 
-use super::super::utils::read_string;
+use super::super::utils::{read_string, write_string, write_string_vec};
 use super::PayloadFormat;
 
 #[derive(Debug, Clone)]
 pub struct KexEcdhReply {
-    pub server_host_key_payload: Vec<u8>,
-    pub server_host_key_algorithm: String,
-    pub server_host_key: Vec<u8>,
-    pub public_key: Vec<u8>,
-    pub signature_algorithm: String,
-    pub signature: Vec<u8>,
+    server_host_key_payload: Vec<u8>,
+    server_host_key_algorithm: String,
+    server_host_key: Vec<u8>,
+    public_key: Vec<u8>,
+    signature_algorithm: String,
+    signature: Vec<u8>,
 }
 
 #[async_trait]
@@ -66,7 +68,74 @@ impl PayloadFormat for KexEcdhReply {
         Self: Sized,
     {
         stream.write_u8(Self::OPCODE).await?;
+        write_string(stream, &self.server_host_key_payload).await?;
+        write_string(stream, &self.public_key).await?;
 
-        todo!();
+        let mut sig_s = vec![];
+        write_string_vec(&mut sig_s, self.signature_algorithm.as_bytes()).await;
+        write_string_vec(&mut sig_s, &self.signature).await;
+
+        write_string(stream, &sig_s).await?;
+        Ok(())
+    }
+}
+
+impl KexEcdhReply {
+    pub async fn new(
+        server_host_key_algorithm: String,
+        server_host_key: Vec<u8>,
+        public_key: Vec<u8>,
+        signature_algorithm: String,
+        signature: Vec<u8>,
+    ) -> Self {
+        let mut server_host_key_payload = vec![];
+        write_string_vec(
+            &mut server_host_key_payload,
+            server_host_key_algorithm.as_bytes(),
+        )
+        .await;
+        server_host_key_payload.extend_from_slice(&server_host_key);
+
+        Self {
+            server_host_key_payload,
+            server_host_key_algorithm,
+            server_host_key,
+            public_key,
+            signature_algorithm,
+            signature,
+        }
+    }
+
+    pub fn server_host_key_digest(&self) -> String {
+        Sha256::digest(&self.server_host_key_payload)
+            .iter()
+            .fold(String::new(), |mut output, b| {
+                let _ = write!(output, "{b:02X}");
+                output
+            })
+    }
+
+    pub fn server_host_key_payload(&self) -> &[u8] {
+        &self.server_host_key_payload
+    }
+
+    pub fn server_host_key_algorithm(&self) -> &str {
+        &self.server_host_key_algorithm
+    }
+
+    pub fn server_host_key(&self) -> &[u8] {
+        &self.server_host_key
+    }
+
+    pub fn public_key(&self) -> &[u8] {
+        &self.public_key
+    }
+
+    pub fn signature_algorithm(&self) -> &str {
+        &self.signature_algorithm
+    }
+
+    pub fn signature(&self) -> &[u8] {
+        &self.signature
     }
 }

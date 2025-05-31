@@ -8,9 +8,9 @@ use super::PayloadFormat;
 
 #[derive(Debug, Clone)]
 pub struct Disconnect {
-    pub reason_code: u32,
-    pub description: String,
-    pub language_tag: String,
+    reason_code: u32,
+    description: String,
+    language_tag: String,
 }
 
 #[async_trait]
@@ -49,5 +49,31 @@ impl PayloadFormat for Disconnect {
         write_string(stream, self.description.as_bytes()).await?;
         write_string(stream, self.language_tag.as_bytes()).await?;
         Ok(())
+    }
+}
+
+impl Disconnect {
+    pub fn new(
+        reason_code: u32,
+        description: impl Into<String>,
+        language_tag: impl Into<String>,
+    ) -> Self {
+        Self {
+            reason_code,
+            description: description.into(),
+            language_tag: language_tag.into(),
+        }
+    }
+
+    pub fn reason_code(&self) -> u32 {
+        self.reason_code
+    }
+
+    pub fn description(&self) -> &str {
+        &self.description
+    }
+
+    pub fn language_tag(&self) -> &str {
+        &self.language_tag
     }
 }

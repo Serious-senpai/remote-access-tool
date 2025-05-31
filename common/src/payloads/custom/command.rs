@@ -3,17 +3,17 @@ use std::error::Error;
 use async_trait::async_trait;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-use super::super::utils::{read_string, write_string};
-use super::PayloadFormat;
+use super::super::super::utils::{read_string, write_string};
+use super::super::PayloadFormat;
 
 #[derive(Debug, Clone)]
-pub struct ServiceRequest {
-    pub service_name: String,
+pub struct Command {
+    command: String,
 }
 
 #[async_trait]
-impl PayloadFormat for ServiceRequest {
-    const OPCODE: u8 = 5;
+impl PayloadFormat for Command {
+    const OPCODE: u8 = 192;
 
     async fn from_stream<S>(stream: &mut S) -> Result<Self, Box<dyn Error>>
     where
@@ -23,10 +23,10 @@ impl PayloadFormat for ServiceRequest {
         let opcode = stream.read_u8().await?;
         Self::_check_opcode(opcode)?;
 
-        let service_name = read_string(stream).await?;
-        let service_name = String::from_utf8(service_name)?;
+        let command = read_string(stream).await?;
+        let command = String::from_utf8(command)?;
 
-        Ok(Self { service_name })
+        Ok(Self { command })
     }
 
     async fn to_stream<S>(&self, stream: &mut S) -> Result<(), Box<dyn Error>>
@@ -35,7 +35,19 @@ impl PayloadFormat for ServiceRequest {
         Self: Sized,
     {
         stream.write_u8(Self::OPCODE).await?;
-        write_string(stream, self.service_name.as_bytes()).await?;
+        write_string(stream, self.command.as_bytes()).await?;
         Ok(())
+    }
+}
+
+impl Command {
+    pub fn new(command: impl Into<String>) -> Self {
+        Self {
+            command: command.into(),
+        }
+    }
+
+    pub fn command(&self) -> &str {
+        &self.command
     }
 }

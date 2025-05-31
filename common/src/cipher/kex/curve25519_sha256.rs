@@ -4,10 +4,9 @@ use async_trait::async_trait;
 use curve25519_dalek::constants::X25519_BASEPOINT;
 use curve25519_dalek::scalar::clamp_integer;
 use curve25519_dalek::{MontgomeryPoint, Scalar};
-use rand::rngs::StdRng;
-use rand::{RngCore, SeedableRng};
-use rsa::sha2::{Digest, Sha256};
+use rand::RngCore;
 use rsa::BigUint;
+use ssh_key::sha2::{Digest, Sha256};
 
 use super::super::super::errors::RuntimeError;
 use super::super::super::utils::{write_biguint_vec, write_string_vec};
@@ -22,21 +21,21 @@ pub struct Curve25519Sha256 {
 
 #[async_trait]
 impl KexAlgorithm for Curve25519Sha256 {
-    fn new() -> Self {
-        let mut rng = StdRng::from_os_rng();
+    fn new(comment: impl Into<String>) -> Self {
+        let mut rng = rand::thread_rng();
 
         let mut private_seed = [0u8; 32];
         rng.fill_bytes(&mut private_seed);
         private_seed = clamp_integer(private_seed);
 
-        let secret_scalar = Scalar::from_bytes_mod_order(private_seed.clone());
+        let secret_scalar = Scalar::from_bytes_mod_order(private_seed);
         let public_key = X25519_BASEPOINT * secret_scalar;
         let public_key = public_key.to_bytes();
 
         Self {
             public_key,
             private_seed,
-            comment: String::from(""),
+            comment: comment.into(),
         }
     }
 

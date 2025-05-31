@@ -1,6 +1,5 @@
 use std::error::Error;
 
-use num::Zero;
 use rsa::BigUint;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
@@ -40,7 +39,7 @@ where
 {
     let repr = read_string(reader).await?;
     if repr.is_empty() {
-        return Ok(BigUint::zero());
+        return Ok(BigUint::new(vec![]));
     }
 
     Ok(BigUint::from_bytes_be(&repr))
