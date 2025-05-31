@@ -86,7 +86,7 @@ where
         Ok(())
     }
 
-    fn peek_opcode(&self) -> Option<u8> {
+    pub fn peek_opcode(&self) -> Option<u8> {
         self.payload.first().cloned()
     }
 }

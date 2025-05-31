@@ -1,3 +1,4 @@
+use std::env::current_dir;
 use std::error::Error;
 use std::path::PathBuf;
 
@@ -9,7 +10,7 @@ use super::super::PayloadFormat;
 
 #[derive(Debug, Clone)]
 pub struct Cwd {
-    cwd: PathBuf,
+    _cwd: PathBuf,
 }
 
 #[async_trait]
@@ -27,7 +28,7 @@ impl PayloadFormat for Cwd {
         let cwd = read_string(stream).await?;
         let cwd = PathBuf::from(String::from_utf8(cwd)?);
 
-        Ok(Self { cwd })
+        Ok(Self { _cwd: cwd })
     }
 
     async fn to_stream<S>(&self, stream: &mut S) -> Result<(), Box<dyn Error>>
@@ -36,19 +37,19 @@ impl PayloadFormat for Cwd {
         Self: Sized,
     {
         stream.write_u8(Self::OPCODE).await?;
-        write_string(stream, self.cwd.to_str().unwrap_or("").as_bytes()).await?;
+        write_string(stream, self._cwd.to_str().unwrap_or("").as_bytes()).await?;
         Ok(())
     }
 }
 
 impl Cwd {
-    pub fn new(cwd: PathBuf) -> Self {
+    pub fn new() -> Self {
         Self {
-            cwd: cwd.canonicalize().unwrap_or(cwd),
+            _cwd: current_dir().unwrap_or(PathBuf::from(".")),
         }
     }
 
     pub fn cwd(&self) -> &PathBuf {
-        &self.cwd
+        &self._cwd
     }
 }

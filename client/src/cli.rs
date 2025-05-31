@@ -6,4 +6,7 @@ use clap::Parser;
     propagate_version = true,
     version
 )]
-pub struct Arguments {}
+pub struct Arguments {
+    /// The address of the server to connect to
+    pub address: String,
+}
