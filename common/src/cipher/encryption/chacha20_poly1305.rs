@@ -18,6 +18,7 @@ pub struct ChaCha20Poly1305 {}
 
 #[async_trait]
 impl Cipher for ChaCha20Poly1305 {
+    const NAME: &str = "chacha20-poly1305@openssh.com";
     const IV_SIZE: usize = 0;
     const ENC_SIZE: usize = 64;
     const INT_SIZE: usize = 0;
@@ -44,7 +45,7 @@ impl Cipher for ChaCha20Poly1305 {
         padding_length: u8,
         payload: &[u8],
         random_padding: &[u8],
-    ) -> Result<(Vec<u8>, Vec<u8>), Box<dyn Error>>
+    ) -> Result<(Vec<u8>, Vec<u8>), Box<dyn Error + Send + Sync>>
     where
         Self: Sized,
     {
@@ -88,7 +89,7 @@ impl Cipher for ChaCha20Poly1305 {
     async fn decrypt<S>(
         ctx: &CipherCtx<Self>,
         stream: &mut S,
-    ) -> Result<Packet<Self>, Box<dyn Error>>
+    ) -> Result<Packet<Self>, Box<dyn Error + Send + Sync>>
     where
         S: AsyncReadExt + Send + Unpin,
         Self: Sized,

@@ -17,7 +17,7 @@ pub struct Disconnect {
 impl PayloadFormat for Disconnect {
     const OPCODE: u8 = 1;
 
-    async fn from_stream<S>(stream: &mut S) -> Result<Self, Box<dyn Error>>
+    async fn from_stream<S>(stream: &mut S) -> Result<Self, Box<dyn Error + Send + Sync>>
     where
         S: AsyncReadExt + Send + Unpin,
         Self: Sized,
@@ -39,7 +39,7 @@ impl PayloadFormat for Disconnect {
         })
     }
 
-    async fn to_stream<S>(&self, stream: &mut S) -> Result<(), Box<dyn Error>>
+    async fn to_stream<S>(&self, stream: &mut S) -> Result<(), Box<dyn Error + Send + Sync>>
     where
         S: AsyncWriteExt + Send + Unpin,
         Self: Sized,

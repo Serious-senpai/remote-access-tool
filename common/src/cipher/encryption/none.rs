@@ -12,6 +12,7 @@ pub struct NoneCipher {}
 
 #[async_trait]
 impl Cipher for NoneCipher {
+    const NAME: &str = "none";
     const IV_SIZE: usize = 0;
     const ENC_SIZE: usize = 0;
     const INT_SIZE: usize = 0;
@@ -41,7 +42,7 @@ impl Cipher for NoneCipher {
         padding_length: u8,
         payload: &[u8],
         random_padding: &[u8],
-    ) -> Result<(Vec<u8>, Vec<u8>), Box<dyn Error>>
+    ) -> Result<(Vec<u8>, Vec<u8>), Box<dyn Error + Send + Sync>>
     where
         Self: Sized,
     {
@@ -57,7 +58,7 @@ impl Cipher for NoneCipher {
     async fn decrypt<S>(
         _ctx: &CipherCtx<Self>,
         stream: &mut S,
-    ) -> Result<Packet<Self>, Box<dyn Error>>
+    ) -> Result<Packet<Self>, Box<dyn Error + Send + Sync>>
     where
         S: AsyncReadExt + Send + Unpin,
         Self: Sized,

@@ -5,12 +5,16 @@ use log::{debug, info};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::sync::Mutex;
+use tokio::time::{timeout, Duration};
 
 use super::cipher::encryption::{Cipher, CipherCtx};
 use super::cipher::kex::KexAlgorithm;
 use super::packets::Packet;
 use super::payloads::PayloadFormat;
 
+/// Thread-safe SSH connection controller.
+///
+/// It is guarateed that both reading and writing requests will not suffer from starvation.
 pub struct SSH<C>
 where
     C: Cipher,
@@ -32,7 +36,10 @@ where
         }
     }
 
-    pub async fn read_version_string(&mut self, verbose: bool) -> Result<String, Box<dyn Error>> {
+    pub async fn read_version_string(
+        &mut self,
+        verbose: bool,
+    ) -> Result<String, Box<dyn Error + Send + Sync>> {
         let mut buf = vec![];
         let mut stream = self._stream.lock().await;
         loop {
@@ -48,7 +55,7 @@ where
                 }
 
                 if line.starts_with("SSH-") {
-                    return Ok::<String, Box<dyn Error>>(trimmed.into());
+                    return Ok::<String, Box<dyn Error + Send + Sync>>(trimmed.into());
                 }
 
                 buf = vec![];
@@ -56,7 +63,10 @@ where
         }
     }
 
-    pub async fn write_version_string(&mut self, version: &str) -> Result<(), Box<dyn Error>> {
+    pub async fn write_version_string(
+        &mut self,
+        version: &str,
+    ) -> Result<(), Box<dyn Error + Send + Sync>> {
         let mut stream = self._stream.lock().await;
         stream.write_all(version.as_bytes()).await?;
         stream.write_all(b"\r\n").await?;
@@ -65,19 +75,33 @@ where
         Ok(())
     }
 
-    pub async fn read_packet(&mut self) -> Result<Packet<C>, Box<dyn Error>> {
-        let mut stream = self._stream.lock().await;
+    pub async fn read_packet(&mut self) -> Result<Packet<C>, Box<dyn Error + Send + Sync>> {
+        // Release the lock every 500 milliseconds to allow other scheduling tasks to run
+        // (tokio mutex guarantees FIFO order).
         let mut receive_ctx = self._receive_ctx.lock().await;
+        loop {
+            let mut stream = self._stream.lock().await;
 
-        let packet = Packet::<C>::from_stream(&receive_ctx, &mut *stream).await?;
-        receive_ctx.seq += 1;
+            if let Ok(p) = timeout(
+                Duration::from_millis(500),
+                Packet::<C>::from_stream(&receive_ctx, &mut *stream),
+            )
+            .await
+            {
+                let packet = p?;
+                receive_ctx.seq += 1;
 
-        Ok(packet)
+                break Ok(packet);
+            }
+        }
     }
 
-    pub async fn write_packet(&mut self, packet: &Packet<C>) -> Result<(), Box<dyn Error>> {
-        let mut stream = self._stream.lock().await;
+    pub async fn write_packet(
+        &mut self,
+        packet: &Packet<C>,
+    ) -> Result<(), Box<dyn Error + Send + Sync>> {
         let mut send_ctx = self._send_ctx.lock().await;
+        let mut stream = self._stream.lock().await;
 
         packet.to_stream(&send_ctx, &mut *stream).await?;
         send_ctx.seq += 1;
@@ -85,14 +109,31 @@ where
         Ok(())
     }
 
-    pub async fn write_payload<P>(&mut self, payload: &P) -> Result<Packet<C>, Box<dyn Error>>
+    pub async fn write_payload<P>(
+        &mut self,
+        payload: &P,
+    ) -> Result<Packet<C>, Box<dyn Error + Send + Sync>>
     where
         P: PayloadFormat + Sync,
     {
-        let mut stream = self._stream.lock().await;
         let mut send_ctx = self._send_ctx.lock().await;
+        let mut stream = self._stream.lock().await;
 
         let packet = payload.to_packet(&send_ctx).await?;
+        packet.to_stream(&send_ctx, &mut *stream).await?;
+        send_ctx.seq += 1;
+
+        Ok(packet)
+    }
+
+    pub async fn write_raw_payload(
+        &mut self,
+        payload: Vec<u8>,
+    ) -> Result<Packet<C>, Box<dyn Error + Send + Sync>> {
+        let mut send_ctx = self._send_ctx.lock().await;
+        let mut stream = self._stream.lock().await;
+
+        let packet = Packet::<C>::from_payload(&send_ctx, payload).await?;
         packet.to_stream(&send_ctx, &mut *stream).await?;
         send_ctx.seq += 1;
 
@@ -104,7 +145,7 @@ where
         shared_secret: &[u8],
         exchange_hash: &[u8],
         session_id: &[u8],
-    ) -> Result<SSH<C2>, Box<dyn Error>>
+    ) -> Result<SSH<C2>, Box<dyn Error + Send + Sync>>
     where
         K: KexAlgorithm,
         C2: Cipher,

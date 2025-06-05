@@ -1,7 +1,11 @@
 [package]
-name = "client"
+name = "rat-client"
 version = "0.1.0"
+authors = ["Serious-senpai"]
 edition = "2021"
+description = "Remote Access Tool (RAT) client component"
+repository = "https://github.com/Serious-senpai/remote-access-tool"
+license = "GPL-2.0-or-later"
 
 [dependencies]
 clap = { workspace = true }
@@ -9,3 +13,8 @@ colog = { workspace = true }
 common = { path = "../common" }
 log = { workspace = true }
 tokio = { workspace = true }
+
+[package.metadata.generate-rpm]
+assets = [
+    { source = "target/release/rat-client", dest = "/usr/bin/rat-client", mode = "755" }
+]

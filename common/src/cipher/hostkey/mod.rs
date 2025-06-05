@@ -10,7 +10,9 @@ use tokio::io::AsyncReadExt;
 
 use super::super::utils::write_string;
 
-pub async fn read_host_key(path: &PathBuf) -> Result<(Vec<u8>, PrivateKey), Box<dyn Error>> {
+pub async fn read_host_key(
+    path: &PathBuf,
+) -> Result<(Vec<u8>, PrivateKey), Box<dyn Error + Send + Sync>> {
     let mut file = File::open(path).await?;
     let mut data = vec![];
     file.read_to_end(&mut data).await?;
@@ -29,18 +31,17 @@ pub async fn read_host_key(path: &PathBuf) -> Result<(Vec<u8>, PrivateKey), Box<
 
 #[async_trait]
 pub trait HostKeyAlgorithm {
-    type RKey;
+    const HOST_KEY_ALGORITHM: &str;
+    const SIGNATURE_ALGORITHM: &str;
 
     async fn verify(
-        signature_algorithm: &str,
         exchange_hash: &[u8],
         signature: &[u8],
         server_host_key: &[u8],
-    ) -> Result<(), Box<dyn Error>>;
+    ) -> Result<(), Box<dyn Error + Send + Sync>>;
 
     async fn sign(
-        signature_algorithm: &str,
         exchange_hash: &[u8],
-        private_key: &Self::RKey,
-    ) -> Result<Vec<u8>, Box<dyn Error>>;
+        private_key: &PrivateKey,
+    ) -> Result<Vec<u8>, Box<dyn Error + Send + Sync>>;
 }

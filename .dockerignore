@@ -1,2 +1,8 @@
+**/*.Dockerfile
 **/Dockerfile
 **/compose.yml
+
+.vscode/
+keys/
+target/
+run.bat

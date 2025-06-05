@@ -1,3 +1,5 @@
-pub mod command;
 pub mod cwd;
-pub mod result;
+pub mod ls;
+pub mod ping;
+pub mod pong;
+pub mod request;

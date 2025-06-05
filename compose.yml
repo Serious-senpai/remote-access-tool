@@ -2,27 +2,41 @@
 name: remote-access-tool
 
 services:
-  server:
+  ubuntu-server:
     build:
       context: .
       dockerfile: server/Dockerfile
-    container_name: server
-    hostname: server
+    command: bash -c "(yes | ssh-keygen -t rsa -f host -N '') && rat-server -k host"
+    container_name: ubuntu-server
+    healthcheck:
+      test: cat /var/log/rat.log
+      interval: 2s
+      timeout: 2s
+      retries: 20
+      start_period: 3s
+    hostname: ubuntu-server
+    image: ubuntu-server
+    stdin_open: true
+    tty: true
 
   ubuntu-client:
     build:
-      args:
-        IMAGE: ubuntu:24.04
       context: .
-      dockerfile: client/Dockerfile
+      dockerfile: client/ubuntu.Dockerfile
+    command: rat-client ubuntu-server:22
     container_name: ubuntu-client
-    hostname: ubuntu-client
+    depends_on:
+      ubuntu-server:
+        condition: service_healthy
+    image: ubuntu-client
 
   centos-client:
     build:
-      args:
-        IMAGE: centos:7
       context: .
-      dockerfile: client/Dockerfile
+      dockerfile: client/centos.Dockerfile
+    command: rat-client ubuntu-server:22
     container_name: centos-client
-    hostname: centos-client
+    depends_on:
+      ubuntu-server:
+        condition: service_healthy
+    image: centos-client

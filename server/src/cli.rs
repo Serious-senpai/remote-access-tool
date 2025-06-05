@@ -1,12 +1,13 @@
 use std::path::PathBuf;
 
-use clap::{Parser, Subcommand};
+use clap::{crate_description, crate_version, Parser};
+use common::cli::LogLevel;
 
 #[derive(Debug, Parser)]
 #[command(
-    long_about = "Remote Access Tool (RAT) server component",
+    long_about = crate_description!(),
     propagate_version = true,
-    version
+    version = crate_version!(),
 )]
 pub struct Arguments {
     /// Path to the host key file
@@ -20,41 +21,8 @@ pub struct Arguments {
     /// Path to the log file
     #[arg(short = 'l', long, default_value = "/var/log/rat.log")]
     pub log_file: PathBuf,
-}
 
-#[derive(Debug, Parser)]
-#[command(
-    disable_help_flag = true,
-    // disable_help_subcommand = true,
-    name = "server>",
-    long_about = "Remote Access Tool (RAT) server component",
-    no_binary_name = true
-)]
-pub struct Internal {
-    #[command(subcommand)]
-    pub command: InternalCommand,
-}
-
-#[derive(Debug, Subcommand)]
-pub enum InternalCommand {
-    /// Manage connected clients
-    Clients {
-        #[command(subcommand)]
-        command: InternalClientsCommand,
-    },
-
-    /// Shut down the server
-    Exit,
-}
-
-#[derive(Debug, Subcommand)]
-pub enum InternalClientsCommand {
-    /// List connected clients
-    List,
-
-    /// Disconnect a client
-    Disconnect {
-        /// The ID of the client to disconnect
-        id: u32,
-    },
+    /// Log level
+    #[arg(long, value_enum, default_value_t = LogLevel::Info)]
+    pub log_level: LogLevel,
 }

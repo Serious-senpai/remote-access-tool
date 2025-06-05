@@ -3,8 +3,10 @@ use std::fmt::Write;
 
 use async_trait::async_trait;
 use rsa::sha2::{Digest, Sha256};
+use ssh_key::PrivateKey;
 use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader};
 
+use super::super::cipher::hostkey::HostKeyAlgorithm;
 use super::super::utils::{read_string, write_string, write_string_vec};
 use super::PayloadFormat;
 
@@ -22,7 +24,7 @@ pub struct KexEcdhReply {
 impl PayloadFormat for KexEcdhReply {
     const OPCODE: u8 = 31;
 
-    async fn from_stream<S>(stream: &mut S) -> Result<Self, Box<dyn Error>>
+    async fn from_stream<S>(stream: &mut S) -> Result<Self, Box<dyn Error + Send + Sync>>
     where
         S: AsyncReadExt + Send + Unpin,
         Self: Sized,
@@ -62,7 +64,7 @@ impl PayloadFormat for KexEcdhReply {
         })
     }
 
-    async fn to_stream<S>(&self, stream: &mut S) -> Result<(), Box<dyn Error>>
+    async fn to_stream<S>(&self, stream: &mut S) -> Result<(), Box<dyn Error + Send + Sync>>
     where
         S: AsyncWriteExt + Send + Unpin,
         Self: Sized,
@@ -81,29 +83,44 @@ impl PayloadFormat for KexEcdhReply {
 }
 
 impl KexEcdhReply {
-    pub async fn new(
-        server_host_key_algorithm: String,
+    pub async fn new<H>(
         server_host_key: Vec<u8>,
         public_key: Vec<u8>,
-        signature_algorithm: String,
-        signature: Vec<u8>,
-    ) -> Self {
+        private_key: &PrivateKey,
+        exchange_hash: &[u8],
+    ) -> Result<Self, Box<dyn Error + Send + Sync>>
+    where
+        H: HostKeyAlgorithm,
+    {
+        let server_host_key_algorithm = H::HOST_KEY_ALGORITHM.to_string();
+        let server_host_key_payload =
+            Self::create_server_host_key_payload(&server_host_key, &server_host_key_algorithm)
+                .await;
+
+        let signature = H::sign(exchange_hash, private_key).await?;
+
+        Ok(Self {
+            server_host_key_payload,
+            server_host_key_algorithm,
+            server_host_key,
+            public_key,
+            signature_algorithm: H::SIGNATURE_ALGORITHM.to_string(),
+            signature,
+        })
+    }
+
+    pub async fn create_server_host_key_payload(
+        server_host_key: &[u8],
+        server_host_key_algorithm: &str,
+    ) -> Vec<u8> {
         let mut server_host_key_payload = vec![];
         write_string_vec(
             &mut server_host_key_payload,
             server_host_key_algorithm.as_bytes(),
         )
         .await;
-        server_host_key_payload.extend_from_slice(&server_host_key);
-
-        Self {
-            server_host_key_payload,
-            server_host_key_algorithm,
-            server_host_key,
-            public_key,
-            signature_algorithm,
-            signature,
-        }
+        server_host_key_payload.extend_from_slice(server_host_key);
+        server_host_key_payload
     }
 
     pub fn server_host_key_digest(&self) -> String {

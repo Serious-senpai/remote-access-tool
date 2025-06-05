@@ -24,6 +24,16 @@ where
     _cipher: PhantomData<C>,
 }
 
+impl CipherCtx<none::NoneCipher> {
+    pub const DUMMY: Self = Self {
+        seq: 0,
+        iv: vec![],
+        enc_key: vec![],
+        int_key: vec![],
+        _cipher: PhantomData,
+    };
+}
+
 impl<C> CipherCtx<C>
 where
     C: Cipher,
@@ -36,7 +46,7 @@ where
         shared_secret: &[u8],
         exchange_hash: &[u8],
         session_id: &[u8],
-    ) -> Result<Self, Box<dyn Error>>
+    ) -> Result<Self, Box<dyn Error + Send + Sync>>
     where
         K: KexAlgorithm,
     {
@@ -114,26 +124,16 @@ where
     }
 }
 
-impl<NoneCipher> CipherCtx<NoneCipher>
-where
-    NoneCipher: Cipher,
-{
-    pub const DUMMY: Self = Self {
-        seq: 0,
-        iv: vec![],
-        enc_key: vec![],
-        int_key: vec![],
-        _cipher: PhantomData,
-    };
-}
-
 #[async_trait]
 pub trait Cipher {
+    const NAME: &str;
     const IV_SIZE: usize;
     const ENC_SIZE: usize;
     const INT_SIZE: usize;
 
-    async fn extract_raw_packet<S>(stream: &mut S) -> Result<Packet<Self>, Box<dyn Error>>
+    async fn extract_raw_packet<S>(
+        stream: &mut S,
+    ) -> Result<Packet<Self>, Box<dyn Error + Send + Sync>>
     where
         S: AsyncReadExt + Send + Unpin,
         Self: Sized,
@@ -160,7 +160,7 @@ pub trait Cipher {
         exchange_hash: &[u8],
         session_id: &[u8],
         letter: u8,
-    ) -> Result<[u8; L], Box<dyn Error>>
+    ) -> Result<[u8; L], Box<dyn Error + Send + Sync>>
     where
         H: Digest,
     {
@@ -199,14 +199,14 @@ pub trait Cipher {
         padding_length: u8,
         payload: &[u8],
         random_padding: &[u8],
-    ) -> Result<(Vec<u8>, Vec<u8>), Box<dyn Error>>
+    ) -> Result<(Vec<u8>, Vec<u8>), Box<dyn Error + Send + Sync>>
     where
         Self: Sized;
 
     async fn decrypt<S>(
         ctx: &CipherCtx<Self>,
         stream: &mut S,
-    ) -> Result<Packet<Self>, Box<dyn Error>>
+    ) -> Result<Packet<Self>, Box<dyn Error + Send + Sync>>
     where
         S: AsyncReadExt + Send + Unpin,
         Self: Sized;

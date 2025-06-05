@@ -6,7 +6,7 @@ RUN apt-get update && apt-get install -y \
     curl \
     git
 
-RUN curl --proto '=https' --tlsv1.2 https://sh.rustup.rs -sSf | sh -s -- --default-toolchain=1.84 -y
+RUN curl --proto '=https' --tlsv1.2 https://sh.rustup.rs -sSf | sh -s -- --default-toolchain=1.87 -y
 
 ENV PATH="/root/.cargo/bin:${PATH}"
 

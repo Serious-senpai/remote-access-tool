@@ -14,13 +14,15 @@ use super::KexAlgorithm;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Curve25519Sha256 {
-    pub public_key: [u8; 32],
-    pub private_seed: [u8; 32],
-    pub comment: String,
+    _public_key: [u8; 32],
+    _private_seed: [u8; 32],
+    _comment: String,
 }
 
 #[async_trait]
 impl KexAlgorithm for Curve25519Sha256 {
+    const NAME: &str = "curve25519-sha256";
+
     fn new(comment: impl Into<String>) -> Self {
         let mut rng = rand::thread_rng();
 
@@ -33,10 +35,18 @@ impl KexAlgorithm for Curve25519Sha256 {
         let public_key = public_key.to_bytes();
 
         Self {
-            public_key,
-            private_seed,
-            comment: comment.into(),
+            _public_key: public_key,
+            _private_seed: private_seed,
+            _comment: comment.into(),
         }
+    }
+
+    fn public_key(&self) -> &[u8] {
+        &self._public_key
+    }
+
+    fn private_seed(&self) -> &[u8] {
+        &self._private_seed
     }
 
     fn hash(data: &[u8]) -> Vec<u8> {
@@ -46,7 +56,7 @@ impl KexAlgorithm for Curve25519Sha256 {
     fn shared_secret(
         our_private: Vec<u8>,
         their_public: Vec<u8>,
-    ) -> Result<Vec<u8>, Box<dyn Error>> {
+    ) -> Result<Vec<u8>, Box<dyn Error + Send + Sync>> {
         let point = MontgomeryPoint(
             their_public
                 .try_into()

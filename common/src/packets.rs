@@ -43,7 +43,7 @@ where
     pub async fn from_payload(
         _ctx: &CipherCtx<C>,
         payload: Vec<u8>,
-    ) -> Result<Self, Box<dyn Error>> {
+    ) -> Result<Self, Box<dyn Error + Send + Sync>> {
         let random_padding = C::create_padding(payload.len());
         let packet_length = (1 + payload.len() + random_padding.len()) as u32;
 
@@ -56,7 +56,10 @@ where
     }
 
     /// Read an SSH packet from a stream.
-    pub async fn from_stream<S>(ctx: &CipherCtx<C>, stream: &mut S) -> Result<Self, Box<dyn Error>>
+    pub async fn from_stream<S>(
+        ctx: &CipherCtx<C>,
+        stream: &mut S,
+    ) -> Result<Self, Box<dyn Error + Send + Sync>>
     where
         S: AsyncReadExt + Send + Unpin,
     {
@@ -68,9 +71,9 @@ where
         &self,
         ctx: &CipherCtx<C>,
         stream: &mut S,
-    ) -> Result<(), Box<dyn Error>>
+    ) -> Result<(), Box<dyn Error + Send + Sync>>
     where
-        S: AsyncWriteExt + Unpin,
+        S: AsyncWriteExt + Unpin + std::fmt::Debug,
     {
         let (encrypted, mac) = C::encrypt(
             ctx,
