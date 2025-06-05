@@ -275,7 +275,7 @@ impl InternalCommand {
                 }
                 InternalClientsCommand::Disconnect { addr } => {
                     let mut clients = clients.write().await;
-                    match clients.remove(&addr) {
+                    match clients.remove(addr) {
                         Some(sender) => {
                             if let Ok(payload) = Disconnect::new(11, "Disconnected by server", "")
                                 .to_payload()
@@ -292,17 +292,14 @@ impl InternalCommand {
             },
             InternalCommand::Cd { addr, path } => {
                 let clients = clients.read().await;
-                match clients.get(&addr) {
+                match clients.get(addr) {
                     Some(sender) => {
                         if let Ok(payload) = Command::new(request_id, Request::Cd(path.into()))
                             .to_payload()
                             .await
                         {
-                            let task = tokio::spawn(Self::expect_cd::<C>(
-                                ptr.clone(),
-                                addr.clone(),
-                                request_id,
-                            ));
+                            let task =
+                                tokio::spawn(Self::expect_cd::<C>(ptr.clone(), *addr, request_id));
 
                             if sender.send(payload).is_ok() {
                                 match task.await {
@@ -327,7 +324,7 @@ impl InternalCommand {
             }
             InternalCommand::Ls { addr, path } => {
                 let clients = clients.read().await;
-                match clients.get(&addr) {
+                match clients.get(addr) {
                     Some(sender) => {
                         if let Ok(payload) = Command::new(
                             request_id,
@@ -336,11 +333,8 @@ impl InternalCommand {
                         .to_payload()
                         .await
                         {
-                            let task = tokio::spawn(Self::expect_ls::<C>(
-                                ptr.clone(),
-                                addr.clone(),
-                                request_id,
-                            ));
+                            let task =
+                                tokio::spawn(Self::expect_ls::<C>(ptr.clone(), *addr, request_id));
 
                             if sender.send(payload).is_ok() {
                                 let _ = task.await;
@@ -357,16 +351,13 @@ impl InternalCommand {
             }
             InternalCommand::Pwd { addr } => {
                 let clients = clients.read().await;
-                match clients.get(&addr) {
+                match clients.get(addr) {
                     Some(sender) => {
                         if let Ok(payload) =
                             Command::new(request_id, Request::Pwd).to_payload().await
                         {
-                            let task = tokio::spawn(Self::expect_pwd::<C>(
-                                ptr.clone(),
-                                addr.clone(),
-                                request_id,
-                            ));
+                            let task =
+                                tokio::spawn(Self::expect_pwd::<C>(ptr.clone(), *addr, request_id));
 
                             if sender.send(payload).is_ok() {
                                 match task.await {
