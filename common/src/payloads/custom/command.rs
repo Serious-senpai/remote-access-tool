@@ -9,30 +9,31 @@ use super::super::super::utils::{read_string, write_string};
 use super::super::PayloadFormat;
 
 #[derive(Debug, Clone)]
-pub enum Command {
+pub enum Request {
     Pwd,
-    Ls(Option<PathBuf>),
+    Ls(PathBuf),
     Cd(PathBuf),
 }
 
-impl Command {
+impl Request {
     fn opcode(&self) -> u8 {
         match self {
-            Command::Pwd => 0,
-            Command::Ls(_) => 1,
-            Command::Cd(_) => 2,
+            Request::Pwd => 0,
+            Request::Ls(_) => 1,
+            Request::Cd(_) => 2,
         }
     }
 }
 
 #[derive(Debug, Clone)]
-pub struct Request {
-    _command: Command,
+pub struct Command {
+    _request_id: u32,
+    _command: Request,
 }
 
 #[async_trait]
-impl PayloadFormat for Request {
-    const OPCODE: u8 = 195;
+impl PayloadFormat for Command {
+    const OPCODE: u8 = 192;
 
     async fn from_stream<S>(stream: &mut S) -> Result<Self, Box<dyn Error + Send + Sync>>
     where
@@ -42,19 +43,16 @@ impl PayloadFormat for Request {
         let opcode = stream.read_u8().await?;
         Self::_check_opcode(opcode)?;
 
+        let request_id = stream.read_u32().await?;
         let command = match stream.read_u8().await? {
-            0 => Command::Pwd,
+            0 => Request::Pwd,
             1 => {
                 let path = read_string(stream).await?;
-                Command::Ls(if path.is_empty() {
-                    None
-                } else {
-                    Some(PathBuf::from(String::from_utf8(path)?))
-                })
+                Request::Ls(PathBuf::from(String::from_utf8(path)?))
             }
             2 => {
                 let path = read_string(stream).await?;
-                Command::Cd(PathBuf::from(String::from_utf8(path)?))
+                Request::Cd(PathBuf::from(String::from_utf8(path)?))
             }
             opcode => Err(RuntimeError::new(format!(
                 "Unknown command opcode {}",
@@ -62,7 +60,10 @@ impl PayloadFormat for Request {
             )))?,
         };
 
-        Ok(Self { _command: command })
+        Ok(Self {
+            _request_id: request_id,
+            _command: command,
+        })
     }
 
     async fn to_stream<S>(&self, stream: &mut S) -> Result<(), Box<dyn Error + Send + Sync>>
@@ -71,14 +72,15 @@ impl PayloadFormat for Request {
         Self: Sized,
     {
         stream.write_u8(Self::OPCODE).await?;
+        stream.write_u32(self._request_id).await?;
         stream.write_u8(self._command.opcode()).await?;
+
         match &self._command {
-            Command::Pwd => {}
-            Command::Ls(path) => {
-                let path = path.clone().unwrap_or_default();
+            Request::Pwd => {}
+            Request::Ls(path) => {
                 write_string(stream, path.to_str().unwrap_or("").as_bytes()).await?;
             }
-            Command::Cd(path) => {
+            Request::Cd(path) => {
                 write_string(stream, path.to_str().unwrap_or("").as_bytes()).await?;
             }
         }
@@ -87,12 +89,19 @@ impl PayloadFormat for Request {
     }
 }
 
-impl Request {
-    pub fn new(command: Command) -> Self {
-        Self { _command: command }
+impl Command {
+    pub fn new(request_id: u32, command: Request) -> Self {
+        Self {
+            _request_id: request_id,
+            _command: command,
+        }
     }
 
-    pub fn command(&self) -> &Command {
+    pub fn request_id(&self) -> u32 {
+        self._request_id
+    }
+
+    pub fn command(&self) -> &Request {
         &self._command
     }
 }

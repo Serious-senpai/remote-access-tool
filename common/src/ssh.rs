@@ -79,16 +79,20 @@ where
         // Release the lock every 500 milliseconds to allow other scheduling tasks to run
         // (tokio mutex guarantees FIFO order).
         let mut receive_ctx = self._receive_ctx.lock().await;
+        debug!("Waiting for incoming packet (seq={})...", receive_ctx.seq);
+
+        let mut buf = vec![0; 1];
         loop {
             let mut stream = self._stream.lock().await;
 
-            if let Ok(p) = timeout(
-                Duration::from_millis(500),
-                Packet::<C>::from_stream(&receive_ctx, &mut *stream),
-            )
-            .await
+            // Use `.peek` instead of `.readable` - the method `.readable` does not yield, therefore
+            // `timeout` cannot cancel it and we may hold the `_stream` lock forever.
+            if timeout(Duration::from_millis(500), stream.peek(&mut buf))
+                .await
+                .is_ok()
             {
-                let packet = p?;
+                let packet = Packet::<C>::from_stream(&receive_ctx, &mut *stream).await?;
+                debug!("Received new packet (seq={})", receive_ctx.seq);
                 receive_ctx.seq += 1;
 
                 break Ok(packet);

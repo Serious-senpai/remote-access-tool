@@ -1,23 +1,13 @@
 use std::collections::HashMap;
 use std::error::Error;
 use std::net::SocketAddr;
-use std::path::PathBuf;
 use std::sync::Arc;
 
-use chrono::{DateTime, Utc};
-use clap::{Parser, Subcommand};
+use clap::Parser;
 use common::cipher::encryption::Cipher;
 use common::cipher::hostkey::HostKeyAlgorithm;
 use common::cipher::kex::KexAlgorithm;
 use common::packets::Packet;
-use common::payloads::custom::cwd::Cwd;
-use common::payloads::custom::ls::ListDir;
-use common::payloads::custom::ping::Ping;
-use common::payloads::custom::pong::Pong;
-use common::payloads::custom::request::{Command, Request};
-use common::payloads::disconnect::Disconnect;
-use common::payloads::PayloadFormat;
-use common::utils::{format_bytes, ConsoleTable};
 use log::error;
 use rustyline::DefaultEditor;
 use ssh_key::PrivateKey;
@@ -27,67 +17,7 @@ use tokio::task::spawn_blocking;
 use tokio::time::{timeout, Duration};
 
 use super::clients::ClientLayer;
-
-const PROMPT: &str = "server>";
-
-#[derive(Debug, Parser)]
-#[command(
-    disable_help_flag = true,
-    name = PROMPT,
-    long_about = "Remote Access Tool (RAT) server component",
-    no_binary_name = true
-)]
-struct Internal {
-    #[command(subcommand)]
-    pub command: InternalCommand,
-}
-
-#[derive(Debug, Subcommand)]
-enum InternalCommand {
-    /// Manage connected clients
-    Clients {
-        #[command(subcommand)]
-        command: InternalClientsCommand,
-    },
-
-    /// Change the working directory in the client side
-    Cd {
-        /// The address of the client to change directory for
-        addr: SocketAddr,
-        /// The new working directory path
-        path: PathBuf,
-    },
-
-    /// List information about a directory in the client side
-    Ls {
-        /// The address of the client to query
-        addr: SocketAddr,
-
-        /// The path to the directory to list (default to current working directory)
-        path: Option<PathBuf>,
-    },
-
-    /// Print working directory in the client side
-    Pwd {
-        /// The address of the client to query
-        addr: SocketAddr,
-    },
-
-    /// Shut down the server
-    Exit,
-}
-
-#[derive(Debug, Subcommand)]
-enum InternalClientsCommand {
-    /// List connected clients
-    Ls,
-
-    /// Disconnect a client
-    Disconnect {
-        /// The address of the client to disconnect
-        addr: SocketAddr,
-    },
-}
+use super::handlers::{Internal, PROMPT};
 
 type _PacketInfo<C> = (SocketAddr, Packet<C>);
 
@@ -132,22 +62,12 @@ where
         }
     }
 
-    fn subscribe(&self) -> broadcast::Receiver<_PacketInfo<C>> {
+    pub fn subscribe(&self) -> broadcast::Receiver<_PacketInfo<C>> {
         self._primordial_client_sender.subscribe()
     }
 
-    async fn wait_for(&self, check: impl Fn(&_PacketInfo<C>) -> bool) -> _PacketInfo<C> {
-        let mut receiver = self.subscribe();
-        loop {
-            if let Ok(packet) = receiver.recv().await {
-                if check(&packet) {
-                    return packet;
-                }
-            }
-        }
-    }
-
     async fn interactive_loop(self: Arc<Self>, notify_on_exit: Arc<Notify>) {
+        let mut request_id = 0;
         match DefaultEditor::new() {
             Ok(mut editor) => loop {
                 let task = spawn_blocking(move || {
@@ -189,207 +109,23 @@ where
                     }
                 };
 
-                match command.command {
-                    InternalCommand::Clients { command } => match command {
-                        InternalClientsCommand::Ls => {
-                            async fn expect_pong<C>(
-                                ptr: Arc<EventLayer<C>>,
-                                true_addr: SocketAddr,
-                                true_value: u8,
-                            ) -> String
-                            where
-                                C: Cipher + Clone + Send + Sync + 'static,
-                            {
-                                let mut receiver = ptr.subscribe();
-                                loop {
-                                    if let Ok((addr, packet)) = receiver.recv().await {
-                                        if addr == true_addr {
-                                            if let Ok(pong) = Pong::from_packet(&packet).await {
-                                                if pong.data() == true_value {
-                                                    return pong.version().to_string();
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-
-                            let payload = match Ping::new(0).to_payload().await {
-                                Ok(p) => p,
-                                Err(e) => {
-                                    eprintln!("Unable to create ping payload: {}", e);
-                                    continue;
-                                }
-                            };
-
-                            let mut wait = vec![];
-                            {
-                                let clients = self._clients.read().await;
-                                for (addr, sender) in clients.iter() {
-                                    wait.push((
-                                        *addr,
-                                        tokio::spawn(timeout(
-                                            Duration::from_secs(5),
-                                            expect_pong::<C>(self.clone(), *addr, 0),
-                                        )),
-                                    ));
-
-                                    let _ = sender.send(payload.clone());
-                                }
-                            }
-
-                            let mut table = ConsoleTable::new([
-                                "Address".to_string(),
-                                "Version string".to_string(),
-                            ]);
-                            let mut clients = self._clients.write().await;
-                            for (addr, f) in wait {
-                                match f.await {
-                                    Ok(Ok(version)) => {
-                                        table.add_row([addr.to_string(), version]);
-                                    }
-                                    _ => {
-                                        clients.remove(&addr);
-                                    }
-                                }
-                            }
-
-                            table.print();
-                        }
-                        InternalClientsCommand::Disconnect { addr } => {
-                            let mut clients = self._clients.write().await;
-                            if let Some(sender) = clients.remove(&addr) {
-                                if let Ok(payload) =
-                                    Disconnect::new(11, "Disconnected by server", "")
-                                        .to_payload()
-                                        .await
-                                {
-                                    let _ = sender.send(payload);
-                                }
-                            } else {
-                                eprintln!("No client with address {}", addr);
-                            }
-                        }
-                    },
-                    InternalCommand::Cd { addr, path } => {
-                        let clients = self._clients.read().await;
-                        match clients.get(&addr) {
-                            Some(sender) => {
-                                if let Ok(payload) =
-                                    Request::new(Command::Cd(path)).to_payload().await
-                                {
-                                    if sender.send(payload).is_ok() {
-                                        let (_, packet) = self
-                                            .wait_for(|(r_addr, r_packet)| {
-                                                r_addr == &addr
-                                                    && r_packet.peek_opcode() == Some(Cwd::OPCODE)
-                                            })
-                                            .await;
-
-                                        if let Ok(cwd) = Cwd::from_packet(&packet).await {
-                                            println!("{}", cwd.cwd().to_string_lossy());
-                                        }
-
-                                        continue;
-                                    }
-                                }
-
-                                eprintln!("Unable to send packet to {}", addr);
-                            }
-                            None => {
-                                eprintln!("No client with address {}", addr);
-                            }
+                match timeout(
+                    Duration::from_secs(10),
+                    command
+                        .command
+                        .execute(self.clone(), &self._clients, request_id),
+                )
+                .await
+                {
+                    Ok(exit) => {
+                        if exit {
+                            break;
                         }
                     }
-                    InternalCommand::Pwd { addr } => {
-                        let clients = self._clients.read().await;
-                        match clients.get(&addr) {
-                            Some(sender) => {
-                                if let Ok(payload) = Request::new(Command::Pwd).to_payload().await {
-                                    if sender.send(payload).is_ok() {
-                                        let (_, packet) = self
-                                            .wait_for(|(r_addr, r_packet)| {
-                                                r_addr == &addr
-                                                    && r_packet.peek_opcode() == Some(Cwd::OPCODE)
-                                            })
-                                            .await;
-
-                                        if let Ok(cwd) = Cwd::from_packet(&packet).await {
-                                            println!("{}", cwd.cwd().to_string_lossy());
-                                        }
-
-                                        continue;
-                                    }
-                                }
-
-                                eprintln!("Unable to send packet to {}", addr);
-                            }
-                            None => {
-                                eprintln!("No client with address {}", addr);
-                            }
-                        }
-                    }
-                    InternalCommand::Ls { addr, path } => {
-                        let clients = self._clients.read().await;
-                        match clients.get(&addr) {
-                            Some(sender) => {
-                                if let Ok(payload) =
-                                    Request::new(Command::Ls(path)).to_payload().await
-                                {
-                                    if sender.send(payload).is_ok() {
-                                        let (_, packet) = self
-                                            .wait_for(|(r_addr, r_packet)| {
-                                                r_addr == &addr
-                                                    && r_packet.peek_opcode()
-                                                        == Some(ListDir::OPCODE)
-                                            })
-                                            .await;
-
-                                        if let Ok(ls) = ListDir::from_packet(&packet).await {
-                                            let mut table = ConsoleTable::new([
-                                                "File Name".to_string(),
-                                                "File Type".to_string(),
-                                                "Created At".to_string(),
-                                                "Modified At".to_string(),
-                                                "Size (bytes)".to_string(),
-                                            ]);
-
-                                            for entry in ls.entries() {
-                                                let created_at =
-                                                    DateTime::<Utc>::from(entry.created_at)
-                                                        .format("%Y-%m-%d %H:%M:%S")
-                                                        .to_string();
-                                                let modified_at =
-                                                    DateTime::<Utc>::from(entry.modified_at)
-                                                        .format("%Y-%m-%d %H:%M:%S")
-                                                        .to_string();
-                                                table.add_row([
-                                                    entry.file_name.clone(),
-                                                    entry.file_type.clone(),
-                                                    created_at,
-                                                    modified_at,
-                                                    format_bytes(entry.size),
-                                                ]);
-                                            }
-
-                                            table.print();
-                                        }
-
-                                        continue;
-                                    }
-                                }
-
-                                eprintln!("Unable to send packet to {}", addr);
-                            }
-                            None => {
-                                eprintln!("No client with address {}", addr);
-                            }
-                        }
-                    }
-                    InternalCommand::Exit => {
-                        break;
-                    }
+                    Err(error) => eprintln!("Command timed out: {}", error),
                 }
+
+                request_id = request_id.wrapping_add(1);
             },
             Err(e) => {
                 eprintln!("Unable to start interactive mode: {}", e);
