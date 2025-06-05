@@ -42,6 +42,12 @@ impl PayloadFormat for Cwd {
     }
 }
 
+impl Default for Cwd {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Cwd {
     pub fn new() -> Self {
         Self {

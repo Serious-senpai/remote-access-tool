@@ -98,23 +98,21 @@ impl ListDir {
         let entries = match read_dir(path) {
             Ok(entries) => {
                 let mut result = vec![];
-                for entry in entries {
-                    if let Ok(entry) = entry {
-                        if let Ok(metadata) = entry.metadata() {
-                            result.push(Entry {
-                                file_name: entry.file_name().to_string_lossy().into_owned(),
-                                file_type: if metadata.is_dir() {
-                                    "dir".to_string()
-                                } else if metadata.is_file() {
-                                    "file".to_string()
-                                } else {
-                                    "symlink".to_string()
-                                },
-                                created_at: metadata.created().unwrap_or(SystemTime::UNIX_EPOCH),
-                                modified_at: metadata.modified().unwrap_or(SystemTime::UNIX_EPOCH),
-                                size: metadata.len(),
-                            })
-                        }
+                for entry in entries.flatten() {
+                    if let Ok(metadata) = entry.metadata() {
+                        result.push(Entry {
+                            file_name: entry.file_name().to_string_lossy().into_owned(),
+                            file_type: if metadata.is_dir() {
+                                "dir".to_string()
+                            } else if metadata.is_file() {
+                                "file".to_string()
+                            } else {
+                                "symlink".to_string()
+                            },
+                            created_at: metadata.created().unwrap_or(SystemTime::UNIX_EPOCH),
+                            modified_at: metadata.modified().unwrap_or(SystemTime::UNIX_EPOCH),
+                            size: metadata.len(),
+                        })
                     }
                 }
 

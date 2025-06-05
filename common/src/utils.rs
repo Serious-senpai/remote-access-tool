@@ -106,11 +106,11 @@ impl<const COL: usize> ConsoleTable<COL> {
         }
 
         print_row(&self._rows[0], &width);
-        for i in 0..COL {
+        for (i, w) in width.iter().enumerate() {
             if i > 0 {
                 print!("-+-");
             }
-            print!("{:-<width$}", "", width = width[i]);
+            print!("{:-<width$}", "", width = w);
         }
         println!();
 

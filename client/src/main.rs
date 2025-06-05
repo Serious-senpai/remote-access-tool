@@ -62,7 +62,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
                     Command::Ls(path) => {
                         let default = PathBuf::from(".");
                         let path = path.as_ref().unwrap_or(&default);
-                        let payload = ListDir::new(&path);
+                        let payload = ListDir::new(path);
                         ssh.write_payload(&payload).await?;
                     }
                     Command::Cd(path) => {

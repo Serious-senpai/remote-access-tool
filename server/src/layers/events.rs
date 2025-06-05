@@ -227,10 +227,10 @@ where
                                 let clients = self._clients.read().await;
                                 for (addr, sender) in clients.iter() {
                                     wait.push((
-                                        addr.clone(),
+                                        *addr,
                                         tokio::spawn(timeout(
                                             Duration::from_secs(5),
-                                            expect_pong::<C>(self.clone(), addr.clone(), 0),
+                                            expect_pong::<C>(self.clone(), *addr, 0),
                                         )),
                                     ));
 
@@ -278,7 +278,7 @@ where
                                 if let Ok(payload) =
                                     Request::new(Command::Cd(path)).to_payload().await
                                 {
-                                    if let Ok(_) = sender.send(payload) {
+                                    if sender.send(payload).is_ok() {
                                         let (_, packet) = self
                                             .wait_for(|(r_addr, r_packet)| {
                                                 r_addr == &addr
@@ -306,7 +306,7 @@ where
                         match clients.get(&addr) {
                             Some(sender) => {
                                 if let Ok(payload) = Request::new(Command::Pwd).to_payload().await {
-                                    if let Ok(_) = sender.send(payload) {
+                                    if sender.send(payload).is_ok() {
                                         let (_, packet) = self
                                             .wait_for(|(r_addr, r_packet)| {
                                                 r_addr == &addr
@@ -336,7 +336,7 @@ where
                                 if let Ok(payload) =
                                     Request::new(Command::Ls(path)).to_payload().await
                                 {
-                                    if let Ok(_) = sender.send(payload) {
+                                    if sender.send(payload).is_ok() {
                                         let (_, packet) = self
                                             .wait_for(|(r_addr, r_packet)| {
                                                 r_addr == &addr

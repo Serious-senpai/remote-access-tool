@@ -1,7 +1,7 @@
 use std::env::consts::OS;
 use std::sync::LazyLock;
 
-pub const SSH_ID_STRING: LazyLock<String> =
+pub static SSH_ID_STRING: LazyLock<String> =
     LazyLock::new(|| format!("SSH-2.0-remote-access-tool {}", OS));
 
 pub const LANGUAGES_CLIENT_TO_SERVER: &str = "";

@@ -16,7 +16,10 @@
                 ],
                 "rust-analyzer.rustfmt.extraArgs": [
                     "+nightly" // For some options in rustfmt.toml
-                ]
+                ],
+                "[github-actions-workflow]": {
+                    "editor.tabSize": 2
+                }
             }
         }
     },

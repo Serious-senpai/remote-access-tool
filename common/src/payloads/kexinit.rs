@@ -180,6 +180,7 @@ impl PayloadFormat for KexInit {
 }
 
 impl KexInit {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         kex_algorithms: Vec<impl Into<String>>,
         server_host_key_algorithms: Vec<impl Into<String>>,
