@@ -35,15 +35,16 @@ pub struct Internal {
 #[derive(Debug, Subcommand)]
 pub enum InternalCommand {
     /// Manage connected clients
-    Clients {
+    Client {
         #[command(subcommand)]
-        command: InternalClientsCommand,
+        command: InternalClientCommand,
     },
 
     /// Change the working directory in the client side
     Cd {
         /// The address of the client to change directory for
         addr: SocketAddr,
+
         /// The new working directory path
         path: PathBuf,
     },
@@ -68,7 +69,7 @@ pub enum InternalCommand {
 }
 
 #[derive(Debug, Subcommand)]
-pub enum InternalClientsCommand {
+pub enum InternalClientCommand {
     /// List connected clients
     Ls,
 
@@ -88,97 +89,94 @@ impl InternalCommand {
     where
         C: Cipher + Clone + Send + Sync + 'static,
     {
-        let mut receiver = ptr.subscribe();
-        loop {
-            if let Ok((addr, packet)) = receiver.recv().await {
-                if addr == true_addr {
-                    if let Ok(pong) = Pong::from_packet(&packet).await {
-                        if pong.data() == true_value {
-                            return pong.version().to_string();
-                        }
+        ptr.wait_for(async |addr, packet| {
+            if addr == true_addr {
+                if let Ok(pong) = Pong::from_packet(&packet).await {
+                    if pong.data() == true_value {
+                        return Some(pong.version().to_string());
                     }
                 }
             }
-        }
+
+            None
+        })
+        .await
     }
 
     async fn expect_cd<C>(ptr: Arc<EventLayer<C>>, true_addr: SocketAddr, request_id: u32) -> String
     where
         C: Cipher + Clone + Send + Sync + 'static,
     {
-        let mut receiver = ptr.subscribe();
-        loop {
-            if let Ok((addr, packet)) = receiver.recv().await {
-                if addr == true_addr {
-                    if let Ok(answer) = Answer::from_packet(&packet).await {
-                        if answer.request_id() == request_id {
-                            if let Response::Cd(path, message) = answer.answer() {
-                                break format!("{}\n{}", path.to_string_lossy(), message);
-                            }
+        ptr.wait_for(async |addr, packet| {
+            if addr == true_addr {
+                if let Ok(answer) = Answer::from_packet(&packet).await {
+                    if answer.request_id() == request_id {
+                        if let Response::Cd(path, message) = answer.answer() {
+                            return Some(format!("{}\n{}", path.to_string_lossy(), message));
                         }
                     }
                 }
             }
-        }
+
+            None
+        })
+        .await
     }
 
     async fn expect_ls<C>(ptr: Arc<EventLayer<C>>, true_addr: SocketAddr, request_id: u32)
     where
         C: Cipher + Clone + Send + Sync + 'static,
     {
-        let mut receiver = ptr.subscribe();
-        loop {
-            if let Ok((addr, packet)) = receiver.recv().await {
-                if addr == true_addr {
-                    if let Ok(answer) = Answer::from_packet(&packet).await {
-                        if answer.request_id() == request_id {
-                            if let Response::Ls(entries) = answer.answer() {
-                                let mut table = ConsoleTable::new([
-                                    "File Name".to_string(),
-                                    "File Type".to_string(),
-                                    "Created At".to_string(),
-                                    "Modified At".to_string(),
-                                    "Size (bytes)".to_string(),
+        ptr.wait_for(async |addr, packet| {
+            if addr == true_addr {
+                if let Ok(answer) = Answer::from_packet(&packet).await {
+                    if answer.request_id() == request_id {
+                        if let Response::Ls(entries) = answer.answer() {
+                            let mut table = ConsoleTable::new([
+                                "File Name".to_string(),
+                                "File Type".to_string(),
+                                "Created At".to_string(),
+                                "Modified At".to_string(),
+                                "Size (bytes)".to_string(),
+                            ]);
+
+                            for entry in entries {
+                                let (created_at, modified_at, formatted_size) = match &entry
+                                    .metadata
+                                {
+                                    Some(metadata) => {
+                                        let created_at = DateTime::<Utc>::from(metadata.created_at)
+                                            .format("%Y-%m-%d %H:%M:%S")
+                                            .to_string();
+                                        let modified_at =
+                                            DateTime::<Utc>::from(metadata.modified_at)
+                                                .format("%Y-%m-%d %H:%M:%S")
+                                                .to_string();
+                                        (created_at, modified_at, format_bytes(metadata.size))
+                                    }
+                                    None => {
+                                        ("N/A".to_string(), "N/A".to_string(), "N/A".to_string())
+                                    }
+                                };
+                                table.add_row([
+                                    entry.file_name.clone(),
+                                    entry.file_type.clone(),
+                                    created_at,
+                                    modified_at,
+                                    formatted_size,
                                 ]);
-
-                                for entry in entries {
-                                    let (created_at, modified_at, formatted_size) = match &entry
-                                        .metadata
-                                    {
-                                        Some(metadata) => {
-                                            let created_at =
-                                                DateTime::<Utc>::from(metadata.created_at)
-                                                    .format("%Y-%m-%d %H:%M:%S")
-                                                    .to_string();
-                                            let modified_at =
-                                                DateTime::<Utc>::from(metadata.modified_at)
-                                                    .format("%Y-%m-%d %H:%M:%S")
-                                                    .to_string();
-                                            (created_at, modified_at, format_bytes(metadata.size))
-                                        }
-                                        None => (
-                                            "N/A".to_string(),
-                                            "N/A".to_string(),
-                                            "N/A".to_string(),
-                                        ),
-                                    };
-                                    table.add_row([
-                                        entry.file_name.clone(),
-                                        entry.file_type.clone(),
-                                        created_at,
-                                        modified_at,
-                                        formatted_size,
-                                    ]);
-                                }
-
-                                table.print();
-                                break;
                             }
+
+                            table.print();
+                            return Some(());
                         }
                     }
                 }
             }
-        }
+
+            None
+        })
+        .await
     }
 
     async fn expect_pwd<C>(
@@ -189,20 +187,20 @@ impl InternalCommand {
     where
         C: Cipher + Clone + Send + Sync + 'static,
     {
-        let mut receiver = ptr.subscribe();
-        loop {
-            if let Ok((addr, packet)) = receiver.recv().await {
-                if addr == true_addr {
-                    if let Ok(answer) = Answer::from_packet(&packet).await {
-                        if answer.request_id() == request_id {
-                            if let Response::Pwd(path) = answer.answer() {
-                                break path.to_string_lossy().into_owned();
-                            }
+        ptr.wait_for(async |addr, packet| {
+            if addr == true_addr {
+                if let Ok(answer) = Answer::from_packet(&packet).await {
+                    if answer.request_id() == request_id {
+                        if let Response::Pwd(path) = answer.answer() {
+                            return Some(path.to_string_lossy().into_owned());
                         }
                     }
                 }
             }
-        }
+
+            None
+        })
+        .await
     }
 
     pub async fn execute<C>(
@@ -215,9 +213,10 @@ impl InternalCommand {
         C: Cipher + Clone + Send + Sync + 'static,
     {
         match self {
-            InternalCommand::Clients { command } => match command {
-                InternalClientsCommand::Ls => {
-                    match Ping::new(0).to_payload().await {
+            InternalCommand::Client { command } => match command {
+                InternalClientCommand::Ls => {
+                    let ping_value = request_id as u8; // truncate
+                    match Ping::new(ping_value).to_payload().await {
                         Ok(payload) => {
                             let mut wait = vec![];
                             {
@@ -232,7 +231,7 @@ impl InternalCommand {
                                         // A slow RTT of ~5 seconds can be considered as a timeout, right? :)
                                         tokio::spawn(timeout(
                                             Duration::from_secs(5),
-                                            Self::expect_pong::<C>(ptr.clone(), *addr, 0),
+                                            Self::expect_pong::<C>(ptr.clone(), *addr, ping_value),
                                         )),
                                     ));
 
@@ -257,9 +256,7 @@ impl InternalCommand {
                                     _ => {
                                         if let Some(sender) = clients.remove(&addr) {
                                             if let Some(payload) = disconnect.clone() {
-                                                tokio::spawn(async move {
-                                                    let _ = sender.send(payload);
-                                                });
+                                                let _ = sender.send(payload);
                                             }
                                         }
                                     }
@@ -273,7 +270,7 @@ impl InternalCommand {
                         }
                     };
                 }
-                InternalClientsCommand::Disconnect { addr } => {
+                InternalClientCommand::Disconnect { addr } => {
                     let mut clients = clients.write().await;
                     match clients.remove(addr) {
                         Some(sender) => {

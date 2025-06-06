@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::error::Error;
+use std::future::Future;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
@@ -19,8 +20,6 @@ use tokio::time::{timeout, Duration};
 use super::clients::ClientLayer;
 use super::handlers::{Internal, PROMPT};
 
-type _PacketInfo<C> = (SocketAddr, Packet<C>);
-
 /// Event-packet logic layer
 ///
 /// Cardinality: 1
@@ -39,7 +38,7 @@ where
 
     /// Clone this sender to new incoming clients so that they can send packets to this event node.
     /// We can also subscribe to this sender to receive packets from all clients.
-    _primordial_client_sender: broadcast::Sender<_PacketInfo<C>>,
+    _primordial_client_sender: broadcast::Sender<(SocketAddr, Packet<C>)>,
 }
 
 impl<C> EventLayer<C>
@@ -62,8 +61,22 @@ where
         }
     }
 
-    pub fn subscribe(&self) -> broadcast::Receiver<_PacketInfo<C>> {
+    pub fn subscribe(&self) -> broadcast::Receiver<(SocketAddr, Packet<C>)> {
         self._primordial_client_sender.subscribe()
+    }
+
+    pub async fn wait_for<T, R>(self: Arc<Self>, execute: impl Fn(SocketAddr, Packet<C>) -> T) -> R
+    where
+        T: Future<Output = Option<R>>,
+    {
+        let mut receiver = self.subscribe();
+        loop {
+            if let Ok((addr, packet)) = receiver.recv().await {
+                if let Some(result) = execute(addr, packet).await {
+                    break result;
+                }
+            }
+        }
     }
 
     async fn interactive_loop(self: Arc<Self>, notify_on_exit: Arc<Notify>) {
