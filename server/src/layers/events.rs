@@ -4,7 +4,6 @@ use std::future::Future;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use clap::Parser;
 use common::cipher::encryption::Cipher;
 use common::cipher::hostkey::HostKeyAlgorithm;
 use common::cipher::kex::KexAlgorithm;
@@ -18,7 +17,7 @@ use tokio::task::spawn_blocking;
 use tokio::time::{timeout, Duration};
 
 use super::clients::ClientLayer;
-use super::handlers::{Internal, PROMPT};
+use super::commands::CommandBuilder;
 
 /// Event-packet logic layer
 ///
@@ -79,15 +78,18 @@ where
         }
     }
 
-    async fn interactive_loop(self: Arc<Self>, notify_on_exit: Arc<Notify>) {
+    async fn interactive_loop(self: Arc<Self>, command_timeout: u64, notify_on_exit: Arc<Notify>) {
         let mut request_id = 0;
+        let mut command_builder = CommandBuilder::new();
         match DefaultEditor::new() {
             Ok(mut editor) => loop {
+                let prompt = command_builder.prompt();
                 let task = spawn_blocking(move || {
                     let mut e = editor;
-                    let line = e.readline(PROMPT);
+                    let line = e.readline(&prompt);
                     (e, line)
                 });
+
                 let line = match task.await {
                     Ok((e, line)) => {
                         editor = e;
@@ -105,6 +107,10 @@ where
                     }
                 };
 
+                if line.trim().is_empty() {
+                    continue;
+                }
+
                 let tokens = match shlex::split(&line) {
                     Some(tokens) => tokens,
                     None => {
@@ -114,8 +120,8 @@ where
                 };
 
                 let _ = editor.add_history_entry(&line);
-                let command = match Internal::try_parse_from(tokens) {
-                    Ok(arguments) => arguments,
+                let matches = match command_builder.build_command().try_get_matches_from(tokens) {
+                    Ok(matches) => matches,
                     Err(e) => {
                         let _ = e.print();
                         continue;
@@ -123,10 +129,8 @@ where
                 };
 
                 match timeout(
-                    Duration::from_secs(10),
-                    command
-                        .command
-                        .execute(self.clone(), &self._clients, request_id),
+                    Duration::from_secs(command_timeout),
+                    command_builder.execute(self.clone(), &self._clients, request_id, matches),
                 )
                 .await
                 {
@@ -145,10 +149,18 @@ where
             }
         }
 
+        // Wait for all tasks to clean up
+        for _ in 0..5 {
+            tokio::task::yield_now().await;
+        }
+
         notify_on_exit.notify_one();
     }
 
-    pub async fn listen_loop<K, H>(self) -> Result<(), Box<dyn Error + Send + Sync>>
+    pub async fn listen_loop<K, H>(
+        self,
+        command_timeout: u64,
+    ) -> Result<(), Box<dyn Error + Send + Sync>>
     where
         K: KexAlgorithm,
         H: HostKeyAlgorithm,
@@ -156,7 +168,10 @@ where
         let ptr = Arc::new(self);
         let notify_on_exit = Arc::new(Notify::new());
 
-        tokio::spawn(ptr.clone().interactive_loop(notify_on_exit.clone()));
+        tokio::spawn(
+            ptr.clone()
+                .interactive_loop(command_timeout, notify_on_exit.clone()),
+        );
 
         loop {
             tokio::select! {

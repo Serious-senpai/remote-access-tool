@@ -28,7 +28,9 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     let listener = TcpListener::bind(("0.0.0.0", arguments.port)).await?;
 
     let event = EventLayer::<ChaCha20Poly1305>::new(listener, ukey, rkey, 100);
-    event.listen_loop::<Curve25519Sha256, RsaSha512>().await?;
+    event
+        .listen_loop::<Curve25519Sha256, RsaSha512>(arguments.timeout)
+        .await?;
 
     Ok(())
 }

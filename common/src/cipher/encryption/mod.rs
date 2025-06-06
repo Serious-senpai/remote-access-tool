@@ -125,7 +125,7 @@ where
 }
 
 #[async_trait]
-pub trait Cipher {
+pub trait Cipher: Clone + Send + Sync {
     const NAME: &str;
     const IV_SIZE: usize;
     const ENC_SIZE: usize;

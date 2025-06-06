@@ -7,7 +7,7 @@ repository = "https://github.com/Serious-senpai/remote-access-tool"
 license = "GPL-2.0-or-later"
 
 [dependencies]
-async-trait = "^0.1.88"
+async-trait = { workspace = true }
 chacha20 = "^0.9.1"
 clap = { workspace = true }
 colog = { workspace = true }
