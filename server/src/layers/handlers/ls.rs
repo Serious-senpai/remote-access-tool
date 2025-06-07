@@ -16,46 +16,60 @@ use super::{EventLayer, Handler, HandlerResult};
 
 async fn _expect_ls<C>(ptr: Arc<EventLayer<C>>, true_addr: SocketAddr, request_id: u32)
 where
-    C: Cipher + Clone + Send + Sync + 'static,
+    C: Cipher + 'static,
 {
     ptr.wait_for(async |addr, packet| {
         if addr == true_addr {
             if let Ok(answer) = Answer::from_packet(&packet).await {
                 if answer.request_id() == request_id {
-                    if let Response::Ls(entries) = answer.answer() {
-                        let mut table = ConsoleTable::new([
-                            "File Name".to_string(),
-                            "File Type".to_string(),
-                            "Created At".to_string(),
-                            "Modified At".to_string(),
-                            "Size (bytes)".to_string(),
-                        ]);
-
-                        for entry in entries {
-                            let (created_at, modified_at, formatted_size) = match &entry.metadata {
-                                Some(metadata) => {
-                                    let created_at = DateTime::<Utc>::from(metadata.created_at)
-                                        .format("%Y-%m-%d %H:%M:%S")
-                                        .to_string();
-                                    let modified_at = DateTime::<Utc>::from(metadata.modified_at)
-                                        .format("%Y-%m-%d %H:%M:%S")
-                                        .to_string();
-                                    (created_at, modified_at, format_bytes(metadata.size))
-                                }
-                                None => ("N/A".to_string(), "N/A".to_string(), "N/A".to_string()),
-                            };
-                            table.add_row([
-                                entry.file_name.clone(),
-                                entry.file_type.clone(),
-                                created_at,
-                                modified_at,
-                                formatted_size,
+                    return match answer.answer() {
+                        Response::Ls(entries) => {
+                            let mut table = ConsoleTable::new([
+                                "File name".to_string(),
+                                "File type".to_string(),
+                                "Created at".to_string(),
+                                "Modified at".to_string(),
+                                "Size".to_string(),
                             ]);
-                        }
+                            for entry in entries {
+                                let (created_at, modified_at, formatted_size) = match &entry
+                                    .metadata
+                                {
+                                    Some(metadata) => {
+                                        let created_at = DateTime::<Utc>::from(metadata.created_at)
+                                            .format("%Y-%m-%d %H:%M:%S")
+                                            .to_string();
+                                        let modified_at =
+                                            DateTime::<Utc>::from(metadata.modified_at)
+                                                .format("%Y-%m-%d %H:%M:%S")
+                                                .to_string();
+                                        (created_at, modified_at, format_bytes(metadata.size))
+                                    }
+                                    None => {
+                                        ("N/A".to_string(), "N/A".to_string(), "N/A".to_string())
+                                    }
+                                };
+                                table.add_row([
+                                    entry.file_name.clone(),
+                                    entry.file_type.clone(),
+                                    created_at,
+                                    modified_at,
+                                    formatted_size,
+                                ]);
+                            }
+                            table.print();
 
-                        table.print();
-                        return Some(());
-                    }
+                            Some(())
+                        }
+                        Response::Error(message) => {
+                            eprintln!("Error from peer: {}", message);
+                            Some(())
+                        }
+                        resp => {
+                            eprintln!("Unexpected response type: {:?}", resp);
+                            Some(())
+                        }
+                    };
                 }
             }
         }

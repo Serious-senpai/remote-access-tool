@@ -17,7 +17,7 @@ use super::super::{EventLayer, Handler, HandlerResult};
 
 async fn _expect_pong<C>(ptr: Arc<EventLayer<C>>, true_addr: SocketAddr, true_value: u8) -> String
 where
-    C: Cipher + Clone + Send + Sync + 'static,
+    C: Cipher + 'static,
 {
     ptr.wait_for(async |addr, packet| {
         if addr == true_addr {

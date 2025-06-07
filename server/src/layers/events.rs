@@ -8,13 +8,16 @@ use common::cipher::encryption::Cipher;
 use common::cipher::hostkey::HostKeyAlgorithm;
 use common::cipher::kex::KexAlgorithm;
 use common::packets::Packet;
-use log::error;
+use common::payloads::custom::command::{Command, Request};
+use common::payloads::disconnect::Disconnect;
+use common::payloads::PayloadFormat;
+use log::{debug, error};
 use rustyline::DefaultEditor;
 use ssh_key::PrivateKey;
 use tokio::net::TcpListener;
-use tokio::sync::{broadcast, mpsc, Notify, RwLock};
+use tokio::sync::{broadcast, mpsc, Mutex, Notify, RwLock};
 use tokio::task::spawn_blocking;
-use tokio::time::{timeout, Duration};
+use tokio::{select, signal};
 
 use super::clients::ClientLayer;
 use super::commands::CommandBuilder;
@@ -42,7 +45,7 @@ where
 
 impl<C> EventLayer<C>
 where
-    C: Cipher + Clone + Send + Sync + 'static,
+    C: Cipher + 'static,
 {
     pub fn new(
         listener: TcpListener,
@@ -78,12 +81,12 @@ where
         }
     }
 
-    async fn interactive_loop(self: Arc<Self>, command_timeout: u64, notify_on_exit: Arc<Notify>) {
+    async fn interactive_loop(self: Arc<Self>, notify_on_exit: Arc<Notify>) {
         let mut request_id = 0;
         let mut command_builder = CommandBuilder::new();
         match DefaultEditor::new() {
             Ok(mut editor) => loop {
-                let prompt = command_builder.prompt();
+                let prompt = format!("\n{}", command_builder.prompt());
                 let task = spawn_blocking(move || {
                     let mut e = editor;
                     let line = e.readline(&prompt);
@@ -128,18 +131,37 @@ where
                     }
                 };
 
-                match timeout(
-                    Duration::from_secs(command_timeout),
-                    command_builder.execute(self.clone(), &self._clients, request_id, matches),
-                )
-                .await
-                {
-                    Ok(exit) => {
-                        if exit {
-                            break;
+                // Place a lock here to avoid dirty write (very rare, but not impossible)
+                let abortable = Arc::new(Mutex::new(()));
+                let abortable_cloned = abortable.clone();
+
+                let ptr = self.clone();
+                let signal_handler = tokio::spawn(async move {
+                    let _ = signal::ctrl_c().await;
+                    let _ = abortable_cloned.lock().await;
+                    match Command::new(!request_id, Request::Cancel(request_id))
+                        .to_payload()
+                        .await
+                    {
+                        Ok(payload) => {
+                            for (_, sender) in ptr._clients.read().await.iter() {
+                                let _ = sender.send(payload.clone());
+                            }
+                        }
+                        Err(e) => {
+                            eprintln!("Unable to create cancel request: {}", e);
                         }
                     }
-                    Err(error) => eprintln!("Command timed out: {}", error),
+                });
+
+                let exit = command_builder
+                    .execute(self.clone(), &self._clients, request_id, matches)
+                    .await;
+
+                let _ = abortable.lock().await;
+                signal_handler.abort();
+                if exit {
+                    break;
                 }
 
                 request_id = request_id.wrapping_add(1);
@@ -157,10 +179,7 @@ where
         notify_on_exit.notify_one();
     }
 
-    pub async fn listen_loop<K, H>(
-        self,
-        command_timeout: u64,
-    ) -> Result<(), Box<dyn Error + Send + Sync>>
+    pub async fn listen_loop<K, H>(self) -> Result<(), Box<dyn Error + Send + Sync>>
     where
         K: KexAlgorithm,
         H: HostKeyAlgorithm,
@@ -168,13 +187,27 @@ where
         let ptr = Arc::new(self);
         let notify_on_exit = Arc::new(Notify::new());
 
-        tokio::spawn(
-            ptr.clone()
-                .interactive_loop(command_timeout, notify_on_exit.clone()),
-        );
+        tokio::spawn(ptr.clone().interactive_loop(notify_on_exit.clone()));
+
+        let ptr_cloned = ptr.clone();
+        tokio::spawn(async move {
+            let mut receiver = ptr_cloned.subscribe();
+            while let Ok((addr, packet)) = receiver.recv().await {
+                if let Ok(payload) = Disconnect::from_packet(&packet).await {
+                    debug!(
+                        "Received disconnect packet from {}: {}",
+                        addr,
+                        payload.description()
+                    );
+
+                    let mut clients = ptr_cloned._clients.write().await;
+                    clients.remove(&addr);
+                }
+            }
+        });
 
         loop {
-            tokio::select! {
+            select! {
                 pair = ptr._listener.accept() => {
                     match pair {
                         Ok((socket, addr)) => {

@@ -10,6 +10,7 @@ use super::events::EventLayer;
 use super::handlers::cd::CdHandler;
 use super::handlers::client::disconnect::ClientDisconnectHandler;
 use super::handlers::client::ls::ClientLsHandler;
+use super::handlers::download::DownloadHandler;
 use super::handlers::exit::ExitHandler;
 use super::handlers::ls::LsHandler;
 use super::handlers::pwd::PwdHandler;
@@ -64,6 +65,7 @@ where
 {
     pub fn new() -> Self {
         let mut root = CommandTree::new();
+
         let mut client = CommandTree::new();
         client.add_child("ls", CommandTree::with_handler(ClientLsHandler));
         client.add_child(
@@ -71,10 +73,12 @@ where
             CommandTree::with_handler(ClientDisconnectHandler),
         );
         root.add_child("client", client);
+
         root.add_child("cd", CommandTree::with_handler(CdHandler));
+        root.add_child("download", CommandTree::with_handler(DownloadHandler));
+        root.add_child("exit", CommandTree::with_handler(ExitHandler));
         root.add_child("ls", CommandTree::with_handler(LsHandler));
         root.add_child("pwd", CommandTree::with_handler(PwdHandler));
-        root.add_child("exit", CommandTree::with_handler(ExitHandler));
         root.add_child("target", CommandTree::with_handler(TargetHandler));
 
         CommandBuilder {
@@ -121,7 +125,7 @@ where
             )
             .subcommand(
                 clap::Command::new("cd")
-                    .about("Change the working directory in the client side")
+                    .about("Change the working directory on the client side")
                     .arg(addr())
                     .arg(
                         clap::Arg::new("path")
@@ -132,7 +136,7 @@ where
             )
             .subcommand(
                 clap::Command::new("ls")
-                    .about("List information about a directory in the client side")
+                    .about("List information about a directory on the client side")
                     .arg(addr())
                     .arg(
                         clap::Arg::new("path")
@@ -144,8 +148,25 @@ where
             )
             .subcommand(
                 clap::Command::new("pwd")
-                    .about("Print working directory in the client side")
+                    .about("Print working directory on the client side")
                     .arg(addr()),
+            )
+            .subcommand(
+                clap::Command::new("download")
+                    .about("Download a file from the client")
+                    .arg(addr())
+                    .arg(
+                        clap::Arg::new("src")
+                            .help("The path to the file on the client side")
+                            .required(true)
+                            .value_parser(clap::value_parser!(PathBuf)),
+                    )
+                    .arg(
+                        clap::Arg::new("dest")
+                            .help("The path to save the file on the server side")
+                            .required(true)
+                            .value_parser(clap::value_parser!(PathBuf)),
+                    ),
             )
             .subcommand(
                 clap::Command::new("target")

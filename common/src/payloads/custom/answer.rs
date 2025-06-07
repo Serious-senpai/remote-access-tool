@@ -27,7 +27,9 @@ pub struct Entry {
 pub enum Response {
     Pwd(PathBuf),
     Ls(Vec<Entry>),
-    Cd(PathBuf, String),
+    Cd(PathBuf),
+    DownloadChunk(u64, Vec<u8>),
+    Error(String),
 }
 
 impl Response {
@@ -36,6 +38,8 @@ impl Response {
             Response::Pwd(..) => 0,
             Response::Ls(..) => 1,
             Response::Cd(..) => 2,
+            Response::DownloadChunk(..) => 3,
+            Response::Error(..) => 4,
         }
     }
 }
@@ -61,8 +65,8 @@ impl PayloadFormat for Answer {
         let request_id = stream.read_u32().await?;
         let answer = match stream.read_u8().await? {
             0 => {
-                let path = read_string(stream).await?;
-                Response::Pwd(PathBuf::from(String::from_utf8(path)?))
+                let path = PathBuf::from(String::from_utf8(read_string(stream).await?)?);
+                Response::Pwd(path)
             }
             1 => {
                 let mut entries = vec![];
@@ -94,8 +98,16 @@ impl PayloadFormat for Answer {
             }
             2 => {
                 let path = PathBuf::from(String::from_utf8(read_string(stream).await?)?);
+                Response::Cd(path)
+            }
+            3 => {
+                let total = stream.read_u64().await?;
+                let data = read_string(stream).await?;
+                Response::DownloadChunk(total, data)
+            }
+            4 => {
                 let message = String::from_utf8(read_string(stream).await?)?;
-                Response::Cd(path, message)
+                Response::Error(message)
             }
             opcode => Err(RuntimeError::new(format!(
                 "Unknown answer opcode {}",
@@ -152,8 +164,14 @@ impl PayloadFormat for Answer {
                     }
                 }
             }
-            Response::Cd(path, message) => {
+            Response::Cd(path) => {
                 write_string(stream, path.to_str().unwrap_or("").as_bytes()).await?;
+            }
+            Response::DownloadChunk(total, data) => {
+                stream.write_u64(*total).await?;
+                write_string(stream, data).await?;
+            }
+            Response::Error(message) => {
                 write_string(stream, message.as_bytes()).await?;
             }
         }

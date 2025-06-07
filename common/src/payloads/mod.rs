@@ -37,7 +37,7 @@ pub trait PayloadFormat {
     /// Extract the payload field from [Packet].
     async fn from_packet<C>(packet: &Packet<C>) -> Result<Self, Box<dyn Error + Send + Sync>>
     where
-        C: Cipher + Sync,
+        C: Cipher,
         Self: Sized,
     {
         Self::from_payload(&packet.payload).await
@@ -73,7 +73,7 @@ pub trait PayloadFormat {
         ctx: &CipherCtx<C>,
     ) -> Result<Packet<C>, Box<dyn Error + Send + Sync>>
     where
-        C: Cipher + Sync,
+        C: Cipher,
         Self: Sized,
     {
         let payload = self.to_payload().await?;

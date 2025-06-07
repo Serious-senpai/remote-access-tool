@@ -13,14 +13,20 @@ pub enum Request {
     Pwd,
     Ls(PathBuf),
     Cd(PathBuf),
+    Download(PathBuf),
+    Cancel(u32),
+    DownloadAck(u32, u64),
 }
 
 impl Request {
     fn opcode(&self) -> u8 {
         match self {
             Request::Pwd => 0,
-            Request::Ls(_) => 1,
-            Request::Cd(_) => 2,
+            Request::Ls(..) => 1,
+            Request::Cd(..) => 2,
+            Request::Download(..) => 3,
+            Request::Cancel(..) => 4,
+            Request::DownloadAck(..) => 5,
         }
     }
 }
@@ -54,6 +60,19 @@ impl PayloadFormat for Command {
                 let path = read_string(stream).await?;
                 Request::Cd(PathBuf::from(String::from_utf8(path)?))
             }
+            3 => {
+                let path = read_string(stream).await?;
+                Request::Download(PathBuf::from(String::from_utf8(path)?))
+            }
+            4 => {
+                let request_id = stream.read_u32().await?;
+                Request::Cancel(request_id)
+            }
+            5 => {
+                let request_id = stream.read_u32().await?;
+                let received = stream.read_u64().await?;
+                Request::DownloadAck(request_id, received)
+            }
             opcode => Err(RuntimeError::new(format!(
                 "Unknown command opcode {}",
                 opcode
@@ -82,6 +101,16 @@ impl PayloadFormat for Command {
             }
             Request::Cd(path) => {
                 write_string(stream, path.to_str().unwrap_or("").as_bytes()).await?;
+            }
+            Request::Download(path) => {
+                write_string(stream, path.to_str().unwrap_or("").as_bytes()).await?;
+            }
+            Request::Cancel(request_id) => {
+                stream.write_u32(*request_id).await?;
+            }
+            Request::DownloadAck(request_id, received) => {
+                stream.write_u32(*request_id).await?;
+                stream.write_u64(*received).await?;
             }
         }
 

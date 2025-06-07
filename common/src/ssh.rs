@@ -5,7 +5,7 @@ use log::{debug, info};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::sync::Mutex;
-use tokio::time::{timeout, Duration};
+use tokio::time::{sleep, timeout, Duration};
 
 use super::cipher::encryption::{Cipher, CipherCtx};
 use super::cipher::kex::KexAlgorithm;
@@ -26,8 +26,9 @@ where
 
 impl<C> SSH<C>
 where
-    C: Cipher + Sync,
+    C: Cipher,
 {
+    /// Construct a new SSH connection controller.
     pub fn new(stream: TcpStream, send_ctx: CipherCtx<C>, receive_ctx: CipherCtx<C>) -> Self {
         Self {
             _stream: Mutex::new(stream),
@@ -36,6 +37,7 @@ where
         }
     }
 
+    /// Read the version string from peer
     pub async fn read_version_string(
         &mut self,
         verbose: bool,
@@ -63,6 +65,7 @@ where
         }
     }
 
+    /// Send the version string to peer
     pub async fn write_version_string(
         &mut self,
         version: &str,
@@ -75,28 +78,44 @@ where
         Ok(())
     }
 
+    /// Peek the next byte in the stream.
+    pub async fn peek(&self) -> u8 {
+        let mut buf = [0; 1];
+        let stream = self._stream.lock().await;
+
+        // Peek the first byte to check if a packet is available
+        let _ = stream.peek(&mut buf).await;
+        buf[0]
+    }
+
+    /// Read a packet from the stream.
+    ///
+    /// WARNING: This is not cancel-safe - canceling the future will leave us in a random position
+    /// in the stream. It is recommended to [peek] first to wait until a packet is available
     pub async fn read_packet(&mut self) -> Result<Packet<C>, Box<dyn Error + Send + Sync>> {
         // Release the lock every 500 milliseconds to allow other scheduling tasks to run
         // (tokio mutex guarantees FIFO order).
         let mut receive_ctx = self._receive_ctx.lock().await;
         debug!("Waiting for incoming packet (seq={})...", receive_ctx.seq);
 
-        let mut buf = vec![0; 1];
+        let mut buf = [0; 1];
         loop {
-            let mut stream = self._stream.lock().await;
-
-            // Use `.peek` instead of `.readable` - the method `.readable` does not yield, therefore
-            // `timeout` cannot cancel it and we may hold the `_stream` lock forever.
-            if timeout(Duration::from_millis(500), stream.peek(&mut buf))
-                .await
-                .is_ok()
             {
-                let packet = Packet::<C>::from_stream(&receive_ctx, &mut *stream).await?;
-                debug!("Received new packet (seq={})", receive_ctx.seq);
-                receive_ctx.seq += 1;
+                let mut stream = self._stream.lock().await;
 
-                break Ok(packet);
+                if timeout(Duration::from_millis(500), stream.peek(&mut buf))
+                    .await
+                    .is_ok()
+                {
+                    let packet = Packet::<C>::from_stream(&receive_ctx, &mut *stream).await?;
+                    debug!("Received new packet (seq={})", receive_ctx.seq);
+                    receive_ctx.seq += 1;
+
+                    break Ok(packet);
+                }
             }
+
+            sleep(Duration::from_millis(500)).await;
         }
     }
 
@@ -107,6 +126,7 @@ where
         let mut send_ctx = self._send_ctx.lock().await;
         let mut stream = self._stream.lock().await;
 
+        debug!("Sending packet (seq={})", send_ctx.seq);
         packet.to_stream(&send_ctx, &mut *stream).await?;
         send_ctx.seq += 1;
 
@@ -123,6 +143,7 @@ where
         let mut send_ctx = self._send_ctx.lock().await;
         let mut stream = self._stream.lock().await;
 
+        debug!("Sending packet (seq={})", send_ctx.seq);
         let packet = payload.to_packet(&send_ctx).await?;
         packet.to_stream(&send_ctx, &mut *stream).await?;
         send_ctx.seq += 1;
@@ -137,6 +158,7 @@ where
         let mut send_ctx = self._send_ctx.lock().await;
         let mut stream = self._stream.lock().await;
 
+        debug!("Sending packet (seq={})", send_ctx.seq);
         let packet = Packet::<C>::from_payload(&send_ctx, payload).await?;
         packet.to_stream(&send_ctx, &mut *stream).await?;
         send_ctx.seq += 1;

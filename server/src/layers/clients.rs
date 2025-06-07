@@ -32,7 +32,7 @@ where
 
 impl<C> ClientLayer<C>
 where
-    C: Cipher + Sync,
+    C: Cipher,
 {
     pub async fn accept_connection<K, H>(
         socket: TcpStream,
@@ -159,8 +159,8 @@ where
                         return Err(e)?;
                     }
                 }
-                packet = self._ssh.read_packet() => {
-                    let packet = log_error!(packet);
+                _ = self._ssh.peek() => {
+                    let packet = log_error!(self._ssh.read_packet().await);
                     if let Err(e) = sender.send((self._addr, packet)) {
                         error!(
                             "Received a packet from {}, but unable to notify higher levels: {}",

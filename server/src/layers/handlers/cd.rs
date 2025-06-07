@@ -14,15 +14,17 @@ use super::{EventLayer, Handler, HandlerResult};
 
 async fn _expect_cd<C>(ptr: Arc<EventLayer<C>>, true_addr: SocketAddr, request_id: u32) -> String
 where
-    C: Cipher + Clone + Send + Sync + 'static,
+    C: Cipher + 'static,
 {
     ptr.wait_for(async |addr, packet| {
         if addr == true_addr {
             if let Ok(answer) = Answer::from_packet(&packet).await {
                 if answer.request_id() == request_id {
-                    if let Response::Cd(path, message) = answer.answer() {
-                        return Some(format!("{}\n{}", path.to_string_lossy(), message));
-                    }
+                    return match answer.answer() {
+                        Response::Cd(path) => Some(format!("{}", path.to_string_lossy())),
+                        Response::Error(message) => Some(format!("Error from peer: {}", message)),
+                        resp => Some(format!("Unexpected response type: {:?}", resp)),
+                    };
                 }
             }
         }

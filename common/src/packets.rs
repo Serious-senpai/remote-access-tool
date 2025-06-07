@@ -73,7 +73,7 @@ where
         stream: &mut S,
     ) -> Result<(), Box<dyn Error + Send + Sync>>
     where
-        S: AsyncWriteExt + Unpin + std::fmt::Debug,
+        S: AsyncWriteExt + Unpin,
     {
         let (encrypted, mac) = C::encrypt(
             ctx,

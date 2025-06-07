@@ -25,8 +25,4 @@ pub struct Arguments {
     /// Log level
     #[arg(long, value_enum, default_value_t = LogLevel::Info)]
     pub log_level: LogLevel,
-
-    /// Command timeout in seconds
-    #[arg(long, default_value_t = 10)]
-    pub timeout: u64,
 }
