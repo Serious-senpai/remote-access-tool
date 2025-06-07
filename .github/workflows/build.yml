@@ -1,0 +1,62 @@
+name: Build
+
+on: [ push, pull_request ]
+
+permissions:
+  contents: read
+
+jobs:
+  ubuntu:
+    name: Build deb packages
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        run: curl --proto '=https' --tlsv1.2 https://sh.rustup.rs -sSf | sh -s -- --default-toolchain=1.87 -y
+
+      - name: Install cargo-deb
+        run: cargo install cargo-deb
+
+      - name: Build deb packages
+        run: |
+          cargo deb -p rat-server -o rat-server.deb
+          cargo deb -p rat-client -o rat-client.deb
+      
+      - name: Upload deb packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: deb-packages
+          path: |
+            rat-server.deb
+            rat-client.deb
+
+  centos:
+    name: Build rpm packages
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        run: curl --proto '=https' --tlsv1.2 https://sh.rustup.rs -sSf | sh -s -- --default-toolchain=1.87 -y
+
+      - name: Install cargo-generate-rpm
+        run: cargo install cargo-generate-rpm
+
+      - name: Build rpm packages
+        run: |
+          cargo build --release
+          cargo generate-rpm --payload-compress none -p server -o rat-server.rpm
+          cargo generate-rpm --payload-compress none -p client -o rat-client.rpm
+      
+      - name: Upload rpm packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: rpm-packages
+          path: |
+            rat-server.rpm
+            rat-client.rpm
