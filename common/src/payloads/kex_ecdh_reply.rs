@@ -6,9 +6,9 @@ use rsa::sha2::{Digest, Sha256};
 use ssh_key::PrivateKey;
 use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader};
 
-use super::super::cipher::hostkey::HostKeyAlgorithm;
-use super::super::utils::{read_string, write_string, write_string_vec};
-use super::PayloadFormat;
+use crate::cipher::hostkey::HostKeyAlgorithm;
+use crate::payloads::PayloadFormat;
+use crate::utils::{read_string, write_string, write_string_vec};
 
 #[derive(Debug, Clone)]
 pub struct KexEcdhReply {

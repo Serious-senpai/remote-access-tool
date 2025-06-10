@@ -1,5 +1,6 @@
 use std::error::Error;
 use std::net::SocketAddr;
+use std::sync::Arc;
 
 use common::cipher::encryption::none::NoneCipher;
 use common::cipher::encryption::{Cipher, CipherCtx};
@@ -14,25 +15,26 @@ use common::payloads::newkeys::NewKeys;
 use common::payloads::PayloadFormat;
 use common::ssh::SSH;
 use common::{config, log_error};
-use log::{debug, error};
+use log::error;
 use ssh_key::PrivateKey;
 use tokio::net::TcpStream;
-use tokio::sync::{broadcast, mpsc};
+use tokio::sync::broadcast;
 
 /// Client communication layer
-///
-/// Cardinality: many (1 per client)
+#[derive(Debug)]
 pub struct ClientLayer<C>
 where
-    C: Cipher,
+    C: Cipher + 'static,
 {
     _addr: SocketAddr,
     _ssh: SSH<C>,
+
+    pub version: String,
 }
 
 impl<C> ClientLayer<C>
 where
-    C: Cipher,
+    C: Cipher + 'static,
 {
     pub async fn accept_connection<K, H>(
         socket: TcpStream,
@@ -44,7 +46,7 @@ where
         K: KexAlgorithm,
         H: HostKeyAlgorithm,
     {
-        let mut ssh = SSH::<NoneCipher>::new(socket, CipherCtx::DUMMY, CipherCtx::DUMMY);
+        let ssh = SSH::<NoneCipher>::new(socket, CipherCtx::DUMMY, CipherCtx::DUMMY);
         log_error!(ssh.write_version_string(&config::SSH_ID_STRING).await);
 
         let client_id_string = log_error!(ssh.read_version_string(true).await);
@@ -139,34 +141,31 @@ where
         Ok(Self {
             _addr: addr,
             _ssh: ssh,
+            version: client_id_string,
         })
     }
 
-    /// The infinite loop that continuously does the following tasks:
-    /// - Reads [Packet]s from SSH peer and sends them to higher levels.
-    /// - Receives [Packet]s from higher levels and sends them to the SSH peer.
-    pub async fn listen_loop(
-        mut self,
-        sender: broadcast::Sender<(SocketAddr, Packet<C>)>,
-        mut receiver: mpsc::UnboundedReceiver<Vec<u8>>,
-    ) -> Result<(), Box<dyn Error + Send + Sync>> {
+    pub async fn send<P>(&self, payload: &P) -> Result<Packet<C>, Box<dyn Error + Send + Sync>>
+    where
+        P: PayloadFormat,
+    {
+        self._ssh.write_payload(payload).await
+    }
+
+    pub async fn listen_loop(self: Arc<Self>, sender: broadcast::Sender<(SocketAddr, Packet<C>)>) {
         loop {
-            tokio::select! {
-                Some(payload) = receiver.recv() => {
-                    debug!("Sending {} bytes of payload to {}", payload.len(), self._addr);
-                    if let Err(e) = self._ssh.write_raw_payload(payload).await {
-                        error!("Unable to send packet to {}: {}", self._addr, e);
-                        return Err(e)?;
-                    }
-                }
-                _ = self._ssh.peek() => {
-                    let packet = log_error!(self._ssh.read_packet().await);
+            match self._ssh.read_packet().await {
+                Ok(packet) => {
                     if let Err(e) = sender.send((self._addr, packet)) {
                         error!(
                             "Received a packet from {}, but unable to notify higher levels: {}",
                             self._addr, e
                         );
                     }
+                }
+                Err(e) => {
+                    error!("Unable to read packet from {}: {}", self._addr, e);
+                    return;
                 }
             }
         }

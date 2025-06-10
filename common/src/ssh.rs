@@ -1,26 +1,32 @@
 use std::error::Error;
+use std::io;
 use std::mem::swap;
+use std::net::SocketAddr;
 
 use log::{debug, info};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::net::TcpStream;
 use tokio::sync::Mutex;
-use tokio::time::{sleep, timeout, Duration};
 
-use super::cipher::encryption::{Cipher, CipherCtx};
-use super::cipher::kex::KexAlgorithm;
-use super::packets::Packet;
-use super::payloads::PayloadFormat;
+use crate::cipher::encryption::{Cipher, CipherCtx};
+use crate::cipher::kex::KexAlgorithm;
+use crate::packets::Packet;
+use crate::payloads::PayloadFormat;
 
 /// Thread-safe SSH connection controller.
 ///
 /// It is guarateed that both reading and writing requests will not suffer from starvation.
+#[derive(Debug)]
 pub struct SSH<C>
 where
     C: Cipher,
 {
-    _stream: Mutex<TcpStream>,
+    _local_addr: SocketAddr,
+    _peer_addr: SocketAddr,
+    _send: Mutex<OwnedWriteHalf>,
     _send_ctx: Mutex<CipherCtx<C>>,
+    _receive: Mutex<OwnedReadHalf>,
     _receive_ctx: Mutex<CipherCtx<C>>,
 }
 
@@ -30,22 +36,36 @@ where
 {
     /// Construct a new SSH connection controller.
     pub fn new(stream: TcpStream, send_ctx: CipherCtx<C>, receive_ctx: CipherCtx<C>) -> Self {
+        let local_addr = stream.local_addr().expect("Failed to get local address");
+        let remote_adr = stream.peer_addr().expect("Failed to get remote address");
+        let (receive, send) = stream.into_split();
         Self {
-            _stream: Mutex::new(stream),
+            _local_addr: local_addr,
+            _peer_addr: remote_adr,
+            _send: Mutex::new(send),
             _send_ctx: Mutex::new(send_ctx),
+            _receive: Mutex::new(receive),
             _receive_ctx: Mutex::new(receive_ctx),
         }
     }
 
+    pub fn local_addr(&self) -> SocketAddr {
+        self._local_addr
+    }
+
+    pub fn peer_addr(&self) -> SocketAddr {
+        self._peer_addr
+    }
+
     /// Read the version string from peer
     pub async fn read_version_string(
-        &mut self,
+        &self,
         verbose: bool,
     ) -> Result<String, Box<dyn Error + Send + Sync>> {
         let mut buf = vec![];
-        let mut stream = self._stream.lock().await;
+        let mut receive = self._receive.lock().await;
         loop {
-            let byte = stream.read_u8().await?;
+            let byte = receive.read_u8().await?;
             buf.push(byte);
             if byte == b'\n' {
                 let line = String::from_utf8(buf)?;
@@ -67,100 +87,119 @@ where
 
     /// Send the version string to peer
     pub async fn write_version_string(
-        &mut self,
+        &self,
         version: &str,
     ) -> Result<(), Box<dyn Error + Send + Sync>> {
-        let mut stream = self._stream.lock().await;
-        stream.write_all(version.as_bytes()).await?;
-        stream.write_all(b"\r\n").await?;
-        stream.flush().await?;
+        let mut send = self._send.lock().await;
+        send.write_all(version.as_bytes()).await?;
+        send.write_all(b"\r\n").await?;
+        send.flush().await?;
+
         debug!("Sent version string: {}", version);
         Ok(())
     }
 
-    /// Peek the next byte in the stream.
-    pub async fn peek(&self) -> u8 {
+    /// Peek the next byte in the stream without consuming it.
+    ///
+    /// This method is cancel-safe.
+    pub async fn peek(&self) -> io::Result<u8> {
         let mut buf = [0; 1];
-        let stream = self._stream.lock().await;
+        let mut receive = self._receive.lock().await;
+        receive.peek(&mut buf).await?;
 
-        // Peek the first byte to check if a packet is available
-        let _ = stream.peek(&mut buf).await;
-        buf[0]
+        Ok(buf[0])
     }
 
     /// Read a packet from the stream.
     ///
     /// WARNING: This is not cancel-safe - canceling the future will leave us in a random position
     /// in the stream. It is recommended to [peek] first to wait until a packet is available
-    pub async fn read_packet(&mut self) -> Result<Packet<C>, Box<dyn Error + Send + Sync>> {
-        // Release the lock every 500 milliseconds to allow other scheduling tasks to run
-        // (tokio mutex guarantees FIFO order).
+    pub async fn read_packet(&self) -> Result<Packet<C>, Box<dyn Error + Send + Sync>> {
         let mut receive_ctx = self._receive_ctx.lock().await;
-        debug!("Waiting for incoming packet (seq={})...", receive_ctx.seq);
+        debug!(
+            "Waiting for incoming packet (seq={}) from {}...",
+            receive_ctx.seq,
+            self.peer_addr(),
+        );
 
-        let mut buf = [0; 1];
-        loop {
-            {
-                let mut stream = self._stream.lock().await;
-
-                if timeout(Duration::from_millis(500), stream.peek(&mut buf))
-                    .await
-                    .is_ok()
-                {
-                    let packet = Packet::<C>::from_stream(&receive_ctx, &mut *stream).await?;
-                    debug!("Received new packet (seq={})", receive_ctx.seq);
-                    receive_ctx.seq += 1;
-
-                    break Ok(packet);
-                }
+        let mut receive = self._receive.lock().await;
+        let packet = Packet::<C>::from_stream(&receive_ctx, &mut *receive).await?;
+        match packet.peek_opcode() {
+            Some(opcode) => {
+                debug!(
+                    "Received packet (seq={}, opcode={}) from {}",
+                    receive_ctx.seq, opcode, self._peer_addr
+                );
             }
+            None => {
+                debug!(
+                    "Received packet (seq={}, unknown opcode) from {}",
+                    receive_ctx.seq, self._peer_addr
+                );
+            }
+        }
 
-            sleep(Duration::from_millis(500)).await;
+        receive_ctx.seq += 1;
+
+        Ok(packet)
+    }
+
+    fn _log_send(&self, seq: u32, opcode: Option<u8>) {
+        match opcode {
+            Some(op) => {
+                debug!(
+                    "Sending packet (seq={}, opcode={}) to {}",
+                    seq, op, self._peer_addr
+                );
+            }
+            None => {
+                debug!("Sending packet (seq={}) to {}", seq, self._peer_addr);
+            }
         }
     }
 
     pub async fn write_packet(
-        &mut self,
+        &self,
         packet: &Packet<C>,
     ) -> Result<(), Box<dyn Error + Send + Sync>> {
         let mut send_ctx = self._send_ctx.lock().await;
-        let mut stream = self._stream.lock().await;
+        let mut send = self._send.lock().await;
 
-        debug!("Sending packet (seq={})", send_ctx.seq);
-        packet.to_stream(&send_ctx, &mut *stream).await?;
+        self._log_send(send_ctx.seq, packet.peek_opcode());
+        packet.to_stream(&send_ctx, &mut *send).await?;
         send_ctx.seq += 1;
 
         Ok(())
     }
 
     pub async fn write_payload<P>(
-        &mut self,
+        &self,
         payload: &P,
     ) -> Result<Packet<C>, Box<dyn Error + Send + Sync>>
     where
         P: PayloadFormat + Sync,
     {
         let mut send_ctx = self._send_ctx.lock().await;
-        let mut stream = self._stream.lock().await;
+        let mut send = self._send.lock().await;
 
-        debug!("Sending packet (seq={})", send_ctx.seq);
         let packet = payload.to_packet(&send_ctx).await?;
-        packet.to_stream(&send_ctx, &mut *stream).await?;
+        self._log_send(send_ctx.seq, packet.peek_opcode());
+        packet.to_stream(&send_ctx, &mut *send).await?;
         send_ctx.seq += 1;
 
         Ok(packet)
     }
 
     pub async fn write_raw_payload(
-        &mut self,
+        &self,
         payload: Vec<u8>,
     ) -> Result<Packet<C>, Box<dyn Error + Send + Sync>> {
         let mut send_ctx = self._send_ctx.lock().await;
-        let mut stream = self._stream.lock().await;
+        let mut send = self._send.lock().await;
 
-        debug!("Sending packet (seq={})", send_ctx.seq);
         let packet = Packet::<C>::from_payload(&send_ctx, payload).await?;
-        packet.to_stream(&send_ctx, &mut *stream).await?;
+        self._log_send(send_ctx.seq, packet.peek_opcode());
+        packet.to_stream(&send_ctx, &mut *send).await?;
         send_ctx.seq += 1;
 
         Ok(packet)
@@ -205,8 +244,11 @@ where
         }
 
         Ok(SSH::<C2> {
-            _stream: self._stream,
+            _local_addr: self._local_addr,
+            _peer_addr: self._peer_addr,
+            _send: self._send,
             _send_ctx: Mutex::new(send_ctx),
+            _receive: self._receive,
             _receive_ctx: Mutex::new(receive_ctx),
         })
     }

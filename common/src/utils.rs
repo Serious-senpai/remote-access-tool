@@ -1,7 +1,11 @@
 use std::error::Error;
+use std::future::Future;
+use std::net::SocketAddr;
+use std::str::FromStr;
 
 use rsa::BigUint;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::sync::broadcast;
 
 /// Reads a string from the reader. The first 4 bytes are the length of the string,
 pub async fn read_string<S>(reader: &mut S) -> Result<Vec<u8>, Box<dyn Error + Send + Sync>>
@@ -72,13 +76,32 @@ pub async fn write_biguint_vec(writer: &mut Vec<u8>, biguint: &BigUint) {
         .expect("Writing to a vector should never fail")
 }
 
+pub async fn write_address<S>(
+    writer: &mut S,
+    address: &SocketAddr,
+) -> Result<(), Box<dyn Error + Send + Sync>>
+where
+    S: AsyncWriteExt + Unpin,
+{
+    write_string(writer, address.to_string().as_bytes()).await?;
+    Ok(())
+}
+
+pub async fn read_address<S>(reader: &mut S) -> Result<SocketAddr, Box<dyn Error + Send + Sync>>
+where
+    S: AsyncReadExt + Unpin,
+{
+    let addr_str = String::from_utf8(read_string(reader).await?)?;
+    Ok(SocketAddr::from_str(&addr_str)?)
+}
+
 pub struct ConsoleTable<const COL: usize> {
     _rows: Vec<[String; COL]>,
 }
 
 impl<const COL: usize> ConsoleTable<COL> {
     pub fn new(headers: [String; COL]) -> Self {
-        ConsoleTable {
+        Self {
             _rows: vec![headers],
         }
     }
@@ -152,4 +175,53 @@ pub fn format_bytes(bytes: u64) -> String {
     }
 
     format!("{:.2} {}", value, unit)
+}
+
+pub fn format_time(mut seconds: u64) -> String {
+    let days = seconds / 86400;
+    seconds -= 86400 * days;
+
+    let hours = seconds / 3600;
+    seconds -= 3600 * hours;
+
+    let minutes = seconds / 60;
+    seconds -= 60 * minutes;
+
+    let mut tokens = vec![];
+    if days > 0 {
+        tokens.push(format!("{}d", days));
+    }
+    if hours > 0 {
+        tokens.push(format!("{}h", hours));
+    }
+    if minutes > 0 {
+        tokens.push(format!("{}m", minutes));
+    }
+    if seconds > 0 || tokens.is_empty() {
+        tokens.push(format!("{}s", seconds));
+    }
+
+    tokens.join(" ")
+}
+
+pub async fn wait_for<T, F, R>(receiver: &mut broadcast::Receiver<T>, execute: impl Fn(T) -> F) -> R
+where
+    T: Clone,
+    F: Future<Output = Option<R>>,
+{
+    loop {
+        if let Ok(packet) = receiver.recv().await {
+            if let Some(result) = execute(packet).await {
+                break result;
+            }
+        }
+    }
+}
+
+pub fn strip(text: String, max_length: usize) -> String {
+    if text.len() < max_length {
+        text
+    } else {
+        format!("{}...", &text[..max_length - 3])
+    }
 }

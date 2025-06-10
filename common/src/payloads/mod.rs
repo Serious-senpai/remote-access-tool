@@ -9,14 +9,14 @@ pub mod newkeys;
 use std::error::Error;
 
 use async_trait::async_trait;
-use tokio::io::{AsyncReadExt, BufReader};
+use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader};
 
-use super::cipher::encryption::{Cipher, CipherCtx};
-use super::errors::UnexpectedPacket;
-use super::packets::Packet;
+use crate::cipher::encryption::{Cipher, CipherCtx};
+use crate::errors::UnexpectedPacket;
+use crate::packets::Packet;
 
 #[async_trait]
-pub trait PayloadFormat {
+pub trait PayloadFormat: Send + Sync {
     const OPCODE: u8;
 
     /// Construct this payload from a stream. The stream must start from the opcode.
@@ -44,17 +44,17 @@ pub trait PayloadFormat {
     }
 
     fn _check_opcode(opcode: u8) -> Result<(), UnexpectedPacket> {
-        if opcode != Self::OPCODE {
-            Err(UnexpectedPacket::new(Self::OPCODE, opcode))
-        } else {
+        if opcode == Self::OPCODE {
             Ok(())
+        } else {
+            Err(UnexpectedPacket::new(Self::OPCODE, opcode))
         }
     }
 
     /// Write this payload to a stream. The data will start from the opcode.
     async fn to_stream<S>(&self, stream: &mut S) -> Result<(), Box<dyn Error + Send + Sync>>
     where
-        S: tokio::io::AsyncWriteExt + Send + Unpin,
+        S: AsyncWriteExt + Send + Unpin,
         Self: Sized;
 
     /// Create a vector consisting of the payload bytes, starting from the opcode.

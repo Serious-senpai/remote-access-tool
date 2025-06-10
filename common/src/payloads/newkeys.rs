@@ -3,10 +3,10 @@ use std::error::Error;
 use async_trait::async_trait;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-use super::PayloadFormat;
+use crate::payloads::PayloadFormat;
 
 #[derive(Debug, Clone)]
-pub struct NewKeys {}
+pub struct NewKeys;
 
 #[async_trait]
 impl PayloadFormat for NewKeys {

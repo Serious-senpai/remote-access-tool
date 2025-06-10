@@ -4,11 +4,11 @@ use async_trait::async_trait;
 use rand::RngCore;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-use super::super::super::packets::{Packet, MIN_PACKET_LENGTH, MIN_PADDING_LENGTH};
-use super::{Cipher, CipherCtx};
+use crate::cipher::encryption::{Cipher, CipherCtx};
+use crate::packets::{Packet, MIN_PACKET_LENGTH, MIN_PADDING_LENGTH};
 
 #[derive(Debug, Clone)]
-pub struct NoneCipher {}
+pub struct NoneCipher;
 
 #[async_trait]
 impl Cipher for NoneCipher {

@@ -9,12 +9,12 @@ use log::debug;
 use poly1305::Poly1305;
 use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader};
 
-use super::super::super::errors::RuntimeError;
-use super::super::super::packets::{Packet, MIN_PACKET_LENGTH, MIN_PADDING_LENGTH};
-use super::{Cipher, CipherCtx};
+use crate::cipher::encryption::{Cipher, CipherCtx};
+use crate::errors::RuntimeError;
+use crate::packets::{Packet, MIN_PACKET_LENGTH, MIN_PADDING_LENGTH};
 
 #[derive(Debug, Clone)]
-pub struct ChaCha20Poly1305 {}
+pub struct ChaCha20Poly1305;
 
 #[async_trait]
 impl Cipher for ChaCha20Poly1305 {

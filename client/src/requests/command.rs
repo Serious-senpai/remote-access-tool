@@ -4,22 +4,24 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use common::cipher::encryption::Cipher;
-use tokio::sync::{mpsc, RwLock};
 
-use super::events::EventLayer;
-use super::handlers::cd::CdHandler;
-use super::handlers::client::disconnect::ClientDisconnectHandler;
-use super::handlers::client::ls::ClientLsHandler;
-use super::handlers::download::DownloadHandler;
-use super::handlers::exit::ExitHandler;
-use super::handlers::ls::LsHandler;
-use super::handlers::pwd::PwdHandler;
-use super::handlers::target::TargetHandler;
-use super::handlers::{Handler, SetTarget};
+use crate::broadcast::BroadcastLayer;
+use crate::requests::handlers::cd::CdHandler;
+use crate::requests::handlers::client::disconnect::ClientDisconnectHandler;
+use crate::requests::handlers::client::ls::ClientLsHandler;
+use crate::requests::handlers::download::DownloadHandler;
+use crate::requests::handlers::exit::ExitHandler;
+use crate::requests::handlers::kill::KillHandler;
+use crate::requests::handlers::ls::LsHandler;
+use crate::requests::handlers::ps::PsHandler;
+use crate::requests::handlers::pwd::PwdHandler;
+use crate::requests::handlers::rm::RmHandler;
+use crate::requests::handlers::target::TargetHandler;
+use crate::requests::handlers::{Handler, HandlerResult};
 
 struct CommandTree<C>
 where
-    C: Cipher + 'static,
+    C: Cipher,
 {
     children: HashMap<&'static str, Arc<CommandTree<C>>>,
     handler: Option<Arc<dyn Handler<C>>>,
@@ -27,7 +29,7 @@ where
 
 impl<C> CommandTree<C>
 where
-    C: Cipher + 'static,
+    C: Cipher,
 {
     fn new() -> Self {
         Self {
@@ -46,7 +48,7 @@ where
         }
     }
 
-    fn add_child(&mut self, name: &'static str, child: CommandTree<C>) {
+    fn add_child(&mut self, name: &'static str, child: Self) {
         self.children.insert(name, Arc::new(child));
     }
 }
@@ -55,7 +57,6 @@ pub struct CommandBuilder<C>
 where
     C: Cipher + 'static,
 {
-    pub target: Option<SocketAddr>,
     _root: Arc<CommandTree<C>>,
 }
 
@@ -78,23 +79,25 @@ where
         root.add_child("download", CommandTree::with_handler(DownloadHandler));
         root.add_child("exit", CommandTree::with_handler(ExitHandler));
         root.add_child("ls", CommandTree::with_handler(LsHandler));
+        root.add_child("ps", CommandTree::with_handler(PsHandler));
+        root.add_child("kill", CommandTree::with_handler(KillHandler));
+        root.add_child("rm", CommandTree::with_handler(RmHandler));
         root.add_child("pwd", CommandTree::with_handler(PwdHandler));
         root.add_child("target", CommandTree::with_handler(TargetHandler));
 
-        CommandBuilder {
-            target: None,
+        Self {
             _root: Arc::new(root),
         }
     }
 
-    pub fn prompt(&self) -> String {
-        match self.target {
+    pub fn prompt(&self, target: &Option<SocketAddr>) -> String {
+        match target {
             Some(target) => format!("server:{}>", target),
             None => "server>".to_string(),
         }
     }
 
-    pub fn build_command(&self) -> clap::Command {
+    pub fn build_command(&self, target: &Option<SocketAddr>) -> clap::Command {
         let addr = || {
             let arg = clap::Arg::new("addr")
                 .short('a')
@@ -102,13 +105,13 @@ where
                 .help("The address of the client to change directory for")
                 .value_parser(clap::value_parser!(SocketAddr));
 
-            match self.target {
+            match target {
                 Some(target) => arg.default_value(target.to_string()).required(false),
                 None => arg.required(true),
             }
         };
 
-        clap::Command::new(self.prompt())
+        clap::Command::new(self.prompt(target))
             .disable_help_flag(true)
             .about(clap::crate_description!())
             .long_about(clap::crate_description!())
@@ -152,6 +155,17 @@ where
                     .arg(addr()),
             )
             .subcommand(
+                clap::Command::new("rm")
+                    .about("Remove a directory or file on the client side")
+                    .arg(addr())
+                    .arg(
+                        clap::Arg::new("path")
+                            .help("The path to the file or directory to remove")
+                            .required(true)
+                            .value_parser(clap::value_parser!(PathBuf)),
+                    ),
+            )
+            .subcommand(
                 clap::Command::new("download")
                     .about("Download a file from the client")
                     .arg(addr())
@@ -169,6 +183,30 @@ where
                     ),
             )
             .subcommand(
+                clap::Command::new("ps")
+                    .about("View running processes on the client side")
+                    .arg(addr()),
+            )
+            .subcommand(
+                clap::Command::new("kill")
+                    .about("Kill a process on the client side")
+                    .arg(addr())
+                    .arg(
+                        clap::Arg::new("pid")
+                            .help("The PID of the process to kill")
+                            .required(true)
+                            .value_parser(clap::value_parser!(u64)),
+                    )
+                    .arg(
+                        clap::Arg::new("signal")
+                            .help("The signal to send to the process")
+                            .short('s')
+                            .long("signal")
+                            .default_value("TERM")
+                            .value_parser(clap::value_parser!(String)),
+                    ),
+            )
+            .subcommand(
                 clap::Command::new("target")
                     .about("Set the default target address for commands")
                     .arg(
@@ -182,12 +220,11 @@ where
     }
 
     pub async fn execute(
-        &mut self,
-        ptr: Arc<EventLayer<C>>,
-        clients: &RwLock<HashMap<SocketAddr, mpsc::UnboundedSender<Vec<u8>>>>,
+        &self,
+        broadcast: Arc<BroadcastLayer<C>>,
         request_id: u32,
         mut matches: clap::ArgMatches,
-    ) -> bool {
+    ) -> HandlerResult {
         let mut tree = self._root.clone();
         let mut qualified_name = vec![];
         while let Some((name, m)) = matches.subcommand() {
@@ -202,27 +239,25 @@ where
                         "Command tree unexpectedly stopped at {:?} (current matches = {:?})",
                         name, matches
                     );
-                    return false;
+                    return HandlerResult::noop();
                 }
             }
         }
 
         match &tree.handler {
             Some(handler) => {
-                let packed = handler.run(ptr, clients, request_id, matches).await;
-
-                if let SetTarget::Update(target) = packed.set_target {
-                    self.target = target;
-                }
-
-                packed.exit
+                let local_addr = broadcast.local_addr();
+                handler
+                    .run(broadcast, request_id, local_addr, matches)
+                    .await
             }
             None => {
                 eprintln!(
-                    "Missing command handler. Try `help {}`",
+                    "Missing command handler. Try `help {}`.",
                     qualified_name.join(" ")
                 );
-                false
+
+                HandlerResult::noop()
             }
         }
     }

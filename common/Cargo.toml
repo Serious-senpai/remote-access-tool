@@ -18,3 +18,6 @@ rand = { version = "^0.8.5", features = ["std_rng"] }
 rsa = "^0.9.8"
 ssh-key = { workspace = true }
 tokio = { workspace = true }
+
+[lints]
+workspace = true

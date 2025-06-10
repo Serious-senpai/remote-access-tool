@@ -1,18 +1,21 @@
 pub mod chacha20_poly1305;
 pub mod none;
 
+use std::error::Error;
+use std::fmt::Debug;
+use std::marker::PhantomData;
+
 use async_trait::async_trait;
 use rsa::BigUint;
 use ssh_key::sha2::Digest;
-use std::error::Error;
-use std::marker::PhantomData;
 use tokio::io::AsyncReadExt;
 
-use super::super::errors::RuntimeError;
-use super::super::packets::Packet;
-use super::super::utils::write_biguint_vec;
-use super::kex::KexAlgorithm;
+use crate::cipher::kex::KexAlgorithm;
+use crate::errors::RuntimeError;
+use crate::packets::Packet;
+use crate::utils::write_biguint_vec;
 
+#[derive(Debug)]
 pub struct CipherCtx<C>
 where
     C: Cipher,
@@ -125,7 +128,7 @@ where
 }
 
 #[async_trait]
-pub trait Cipher: Clone + Send + Sync {
+pub trait Cipher: Clone + Debug + Send + Sync {
     const NAME: &str;
     const IV_SIZE: usize;
     const ENC_SIZE: usize;
@@ -150,8 +153,8 @@ pub trait Cipher: Clone + Send + Sync {
         Ok(Packet::<Self>::new(
             packet_length,
             padding_length,
-            payload.to_vec(),
-            random_padding.to_vec(),
+            payload,
+            random_padding,
         ))
     }
 

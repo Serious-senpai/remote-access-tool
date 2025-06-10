@@ -15,7 +15,6 @@ colog = { workspace = true }
 common = { path = "../common" }
 env_logger = "^0.11.3"
 log = { workspace = true }
-rustyline = "^16.0.0"
 shlex = "^1.3.0"
 ssh-key = { workspace = true }
 tokio = { workspace = true }
@@ -24,3 +23,6 @@ tokio = { workspace = true }
 assets = [
     { source = "target/release/rat-server", dest = "/usr/bin/rat-server", mode = "755" }
 ]
+
+[lints]
+workspace = true

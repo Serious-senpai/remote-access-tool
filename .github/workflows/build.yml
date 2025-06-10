@@ -60,3 +60,27 @@ jobs:
           path: |
             rat-server.rpm
             rat-client.rpm
+
+  docker:
+    name: Build Docker images
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build Docker images
+        run: docker compose build
+
+      - name: Save Docker images
+        run: |
+          mkdir build
+          docker save -o build/ubuntu-server.tar ubuntu-server
+          docker save -o build/ubuntu-client.tar ubuntu-client
+          docker save -o build/centos-client.tar centos-client
+
+      - name: Upload Docker images
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-images
+          path: build/

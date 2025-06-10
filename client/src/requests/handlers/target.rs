@@ -1,12 +1,11 @@
-use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
 use async_trait::async_trait;
 use common::cipher::encryption::Cipher;
-use tokio::sync::{mpsc, RwLock};
 
-use super::{EventLayer, Handler, HandlerResult};
+use crate::requests::handlers::{Handler, HandlerResult};
+use crate::broadcast::BroadcastLayer;
 
 pub struct TargetHandler;
 
@@ -17,9 +16,9 @@ where
 {
     async fn run(
         &self,
-        _: Arc<EventLayer<C>>,
-        _: &RwLock<HashMap<SocketAddr, mpsc::UnboundedSender<Vec<u8>>>>,
+        _: Arc<BroadcastLayer<C>>,
         _: u32,
+        _: SocketAddr,
         matches: clap::ArgMatches,
     ) -> HandlerResult {
         let addr = matches.get_one::<SocketAddr>("addr");

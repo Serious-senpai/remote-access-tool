@@ -8,9 +8,9 @@ use rand::RngCore;
 use rsa::BigUint;
 use ssh_key::sha2::{Digest, Sha256};
 
-use super::super::super::errors::RuntimeError;
-use super::super::super::utils::{write_biguint_vec, write_string_vec};
-use super::KexAlgorithm;
+use crate::cipher::kex::KexAlgorithm;
+use crate::errors::RuntimeError;
+use crate::utils::{write_biguint_vec, write_string_vec};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Curve25519Sha256 {

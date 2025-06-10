@@ -15,12 +15,12 @@ pub enum LogLevel {
 impl LogLevel {
     pub fn to_level_filter(&self) -> LevelFilter {
         match self {
-            LogLevel::Off => LevelFilter::Off,
-            LogLevel::Error => LevelFilter::Error,
-            LogLevel::Warn => LevelFilter::Warn,
-            LogLevel::Info => LevelFilter::Info,
-            LogLevel::Debug => LevelFilter::Debug,
-            LogLevel::Trace => LevelFilter::Trace,
+            Self::Off => LevelFilter::Off,
+            Self::Error => LevelFilter::Error,
+            Self::Warn => LevelFilter::Warn,
+            Self::Info => LevelFilter::Info,
+            Self::Debug => LevelFilter::Debug,
+            Self::Trace => LevelFilter::Trace,
         }
     }
 }

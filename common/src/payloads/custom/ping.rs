@@ -3,7 +3,7 @@ use std::error::Error;
 use async_trait::async_trait;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-use super::super::PayloadFormat;
+use crate::payloads::PayloadFormat;
 
 #[derive(Debug, Clone)]
 pub struct Ping {
@@ -12,7 +12,7 @@ pub struct Ping {
 
 #[async_trait]
 impl PayloadFormat for Ping {
-    const OPCODE: u8 = 193;
+    const OPCODE: u8 = 196;
 
     async fn from_stream<S>(stream: &mut S) -> Result<Self, Box<dyn Error + Send + Sync>>
     where

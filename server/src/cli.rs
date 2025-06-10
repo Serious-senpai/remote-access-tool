@@ -19,7 +19,7 @@ pub struct Arguments {
     pub port: u16,
 
     /// Path to the log file
-    #[arg(short = 'l', long, default_value = "/var/log/rat.log")]
+    #[arg(short = 'l', long, default_value = "/dev/stdout")]
     pub log_file: PathBuf,
 
     /// Log level

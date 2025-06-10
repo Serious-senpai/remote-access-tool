@@ -23,7 +23,7 @@ where
     K: KexAlgorithm,
     H: HostKeyAlgorithm,
 {
-    let mut ssh = SSH::<NoneCipher>::new(stream, CipherCtx::DUMMY, CipherCtx::DUMMY);
+    let ssh = SSH::<NoneCipher>::new(stream, CipherCtx::DUMMY, CipherCtx::DUMMY);
 
     log_error!(ssh.write_version_string(&config::SSH_ID_STRING).await);
     let server_id_string = log_error!(ssh.read_version_string(true).await);

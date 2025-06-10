@@ -3,7 +3,7 @@ use std::marker::PhantomData;
 
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-use super::cipher::encryption::{Cipher, CipherCtx};
+use crate::cipher::encryption::{Cipher, CipherCtx};
 
 pub const MIN_PACKET_LENGTH: usize = 16;
 pub const MIN_PADDING_LENGTH: usize = 4;
@@ -90,6 +90,6 @@ where
     }
 
     pub fn peek_opcode(&self) -> Option<u8> {
-        self.payload.first().cloned()
+        self.payload.first().copied()
     }
 }

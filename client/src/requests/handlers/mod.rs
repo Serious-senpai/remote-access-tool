@@ -2,19 +2,20 @@ pub mod cd;
 pub mod client;
 pub mod download;
 pub mod exit;
+pub mod kill;
 pub mod ls;
+pub mod ps;
 pub mod pwd;
+pub mod rm;
 pub mod target;
 
-use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
 use async_trait::async_trait;
 use common::cipher::encryption::Cipher;
-use tokio::sync::{mpsc, RwLock};
 
-use super::events::EventLayer;
+use crate::BroadcastLayer;
 
 pub struct HandlerResult {
     pub exit: bool,
@@ -52,13 +53,13 @@ pub enum SetTarget {
 #[async_trait]
 pub trait Handler<C>: Send + Sync
 where
-    C: Cipher + 'static,
+    C: Cipher,
 {
     async fn run(
         &self,
-        ptr: Arc<EventLayer<C>>,
-        clients: &RwLock<HashMap<SocketAddr, mpsc::UnboundedSender<Vec<u8>>>>,
+        broadcast: Arc<BroadcastLayer<C>>,
         request_id: u32,
+        local_addr: SocketAddr,
         matches: clap::ArgMatches,
     ) -> HandlerResult;
 }

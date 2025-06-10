@@ -4,11 +4,12 @@ use std::error::Error;
 use std::path::PathBuf;
 
 use async_trait::async_trait;
+use ssh_key::private::KeypairData;
 use ssh_key::PrivateKey;
 use tokio::fs::File;
 use tokio::io::AsyncReadExt;
 
-use super::super::utils::write_string;
+use crate::utils::write_string;
 
 pub async fn read_host_key(
     path: &PathBuf,
@@ -19,7 +20,7 @@ pub async fn read_host_key(
 
     let key = PrivateKey::from_openssh(&data)?;
     match key.key_data() {
-        ssh_key::private::KeypairData::Rsa(keypair) => {
+        KeypairData::Rsa(keypair) => {
             data.clear();
             write_string(&mut data, keypair.public.e.as_bytes()).await?;
             write_string(&mut data, keypair.public.n.as_bytes()).await?;
@@ -30,7 +31,7 @@ pub async fn read_host_key(
 }
 
 #[async_trait]
-pub trait HostKeyAlgorithm {
+pub trait HostKeyAlgorithm: Send + Sync {
     const HOST_KEY_ALGORITHM: &str;
     const SIGNATURE_ALGORITHM: &str;
 

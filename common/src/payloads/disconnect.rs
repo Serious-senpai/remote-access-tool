@@ -3,8 +3,8 @@ use std::error::Error;
 use async_trait::async_trait;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-use super::super::utils::{read_string, write_string};
-use super::PayloadFormat;
+use crate::payloads::PayloadFormat;
+use crate::utils::{read_string, write_string};
 
 #[derive(Debug, Clone)]
 pub struct Disconnect {

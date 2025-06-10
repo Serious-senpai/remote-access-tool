@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use clap::{crate_description, crate_version, Parser};
 use common::cli::LogLevel;
 
@@ -14,4 +16,8 @@ pub struct Arguments {
     /// Log level
     #[arg(long, value_enum, default_value_t = LogLevel::Info)]
     pub log_level: LogLevel,
+
+    /// Path to the host key file to authenticate as the admin
+    #[arg(long)]
+    pub admin: Option<PathBuf>,
 }

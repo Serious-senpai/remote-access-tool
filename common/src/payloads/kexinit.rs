@@ -4,11 +4,11 @@ use async_trait::async_trait;
 use rand::RngCore;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-use super::super::cipher::encryption::Cipher;
-use super::super::cipher::hostkey::HostKeyAlgorithm;
-use super::super::cipher::kex::KexAlgorithm;
-use super::super::utils::{read_string, write_string};
-use super::PayloadFormat;
+use crate::cipher::encryption::Cipher;
+use crate::cipher::hostkey::HostKeyAlgorithm;
+use crate::cipher::kex::KexAlgorithm;
+use crate::payloads::PayloadFormat;
+use crate::utils::{read_string, write_string};
 
 #[derive(Debug, Clone)]
 pub struct KexInit {
@@ -171,7 +171,7 @@ impl PayloadFormat for KexInit {
         .await?;
 
         stream
-            .write_u8(self._first_kex_packet_follows as u8)
+            .write_u8(u8::from(self._first_kex_packet_follows))
             .await?;
         stream.write_u32(self._reserved).await?;
 
@@ -180,7 +180,6 @@ impl PayloadFormat for KexInit {
 }
 
 impl KexInit {
-    #[allow(clippy::too_many_arguments)]
     pub fn new(
         kex_algorithms: Vec<impl Into<String>>,
         server_host_key_algorithms: Vec<impl Into<String>>,

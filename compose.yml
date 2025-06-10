@@ -6,7 +6,7 @@ services:
     build:
       context: .
       dockerfile: server/Dockerfile
-    command: bash -c "(yes | ssh-keygen -t rsa -f host -N '') && rat-server -k host"
+    command: bash -c "(yes | ssh-keygen -t rsa -f host -N '') && rat-server -k host | tee /var/log/rat.log"
     container_name: ubuntu-server
     healthcheck:
       test: cat /var/log/rat.log

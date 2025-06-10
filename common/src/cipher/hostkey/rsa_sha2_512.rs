@@ -9,11 +9,11 @@ use ssh_key::private::KeypairData;
 use ssh_key::PrivateKey;
 use tokio::io::BufReader;
 
-use super::super::super::errors::RuntimeError;
-use super::super::super::utils::read_biguint;
-use super::HostKeyAlgorithm;
+use crate::cipher::hostkey::HostKeyAlgorithm;
+use crate::errors::RuntimeError;
+use crate::utils::read_biguint;
 
-pub struct RsaSha512 {}
+pub struct RsaSha512;
 
 #[async_trait]
 impl HostKeyAlgorithm for RsaSha512 {
