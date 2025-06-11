@@ -54,3 +54,74 @@ impl Pong {
         self._data
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use tokio::io::{BufReader, BufWriter};
+
+    use super::*;
+
+    #[tokio::test]
+    async fn test_pong_new() {
+        let pong = Pong::new(42);
+        assert_eq!(pong.data(), 42);
+    }
+
+    #[tokio::test]
+    async fn test_pong_from_ping() {
+        let ping = Ping::new(100);
+        let pong = Pong::from_ping(&ping);
+        assert_eq!(pong.data(), 101);
+    }
+
+    #[tokio::test]
+    async fn test_pong_from_ping_wrapping() {
+        let ping = Ping::new(255);
+        let pong = Pong::from_ping(&ping);
+        assert_eq!(pong.data(), 0); // 255 + 1 wraps to 0
+    }
+
+    #[tokio::test]
+    async fn test_to_stream_and_from_stream() {
+        let original_pong = Pong::new(123);
+
+        // Write to Vec
+        let mut buffer = Vec::new();
+        {
+            let mut writer = BufWriter::new(&mut buffer);
+            original_pong.to_stream(&mut writer).await.unwrap();
+            writer.flush().await.unwrap();
+        }
+
+        // Read from Vec
+        let mut reader = BufReader::new(&buffer[..]);
+        let parsed_pong = Pong::from_stream(&mut reader).await.unwrap();
+
+        assert_eq!(original_pong.data(), parsed_pong.data());
+    }
+
+    #[tokio::test]
+    async fn test_serialization_format() {
+        let pong = Pong::new(42);
+        let mut buffer = Vec::new();
+
+        {
+            let mut writer = BufWriter::new(&mut buffer);
+            pong.to_stream(&mut writer).await.unwrap();
+            writer.flush().await.unwrap();
+        }
+
+        assert_eq!(buffer.len(), 2);
+        assert_eq!(buffer[0], Pong::OPCODE);
+        assert_eq!(buffer[1], 42);
+    }
+
+    #[tokio::test]
+    async fn test_invalid_opcode() {
+        let buffer = vec![99, 42]; // Wrong opcode
+        let mut reader = BufReader::new(&buffer[..]);
+
+        let result = Pong::from_stream(&mut reader).await;
+        assert!(result.is_err());
+    }
+}

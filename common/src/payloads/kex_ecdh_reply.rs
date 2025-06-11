@@ -156,3 +156,121 @@ impl KexEcdhReply {
         &self.signature
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use tokio::io::{BufReader, BufWriter};
+
+    use super::*;
+
+    #[tokio::test]
+    async fn test_from_stream_and_to_stream_roundtrip() {
+        // Create test data
+        let server_host_key_algorithm = "ssh-rsa";
+        let server_host_key = vec![1, 2, 3, 4, 5];
+        let server_host_key_payload = KexEcdhReply::create_server_host_key_payload(
+            &server_host_key,
+            server_host_key_algorithm,
+        )
+        .await;
+        let public_key = vec![10, 20, 30, 40, 50];
+        let signature_algorithm = "rsa-sha2-256";
+        let signature = vec![100, 200];
+
+        let original = KexEcdhReply {
+            server_host_key_payload: server_host_key_payload.clone(),
+            server_host_key_algorithm: server_host_key_algorithm.to_string(),
+            server_host_key: server_host_key.clone(),
+            public_key: public_key.clone(),
+            signature_algorithm: signature_algorithm.to_string(),
+            signature: signature.clone(),
+        };
+
+        // Write to Vec
+        let mut buffer = Vec::new();
+        {
+            let mut writer = BufWriter::new(&mut buffer);
+            original.to_stream(&mut writer).await.unwrap();
+            writer.flush().await.unwrap();
+        }
+
+        // Read from Vec
+        let mut reader = BufReader::new(buffer.as_slice());
+        let parsed = KexEcdhReply::from_stream(&mut reader).await.unwrap();
+
+        // Verify roundtrip
+        assert_eq!(
+            original.server_host_key_algorithm,
+            parsed.server_host_key_algorithm
+        );
+        assert_eq!(original.server_host_key, parsed.server_host_key);
+        assert_eq!(original.public_key, parsed.public_key);
+        assert_eq!(original.signature_algorithm, parsed.signature_algorithm);
+        assert_eq!(original.signature, parsed.signature);
+        assert_eq!(
+            original.server_host_key_payload,
+            parsed.server_host_key_payload
+        );
+    }
+
+    #[tokio::test]
+    async fn test_server_host_key_digest() {
+        let kex_reply = KexEcdhReply {
+            server_host_key_payload: vec![1, 2, 3, 4],
+            server_host_key_algorithm: "ssh-rsa".to_string(),
+            server_host_key: vec![5, 6, 7, 8],
+            public_key: vec![9, 10, 11, 12],
+            signature_algorithm: "rsa-sha2-256".to_string(),
+            signature: vec![13, 14, 15, 16],
+        };
+
+        let digest = kex_reply.server_host_key_digest();
+        assert!(!digest.is_empty());
+        assert!(digest.chars().all(|c| c.is_ascii_hexdigit()));
+    }
+
+    #[tokio::test]
+    async fn test_create_server_host_key_payload() {
+        let server_host_key = vec![1, 2, 3, 4, 5];
+        let algorithm = "ssh-rsa";
+
+        let payload =
+            KexEcdhReply::create_server_host_key_payload(&server_host_key, algorithm).await;
+
+        // Verify the payload contains the algorithm and key data
+        assert!(payload.len() > server_host_key.len());
+        assert!(payload.ends_with(&server_host_key));
+    }
+
+    #[tokio::test]
+    async fn test_getters() {
+        let server_host_key_payload = vec![1, 2, 3, 4];
+        let server_host_key_algorithm = "ssh-rsa".to_string();
+        let server_host_key = vec![5, 6, 7, 8];
+        let public_key = vec![9, 10, 11, 12];
+        let signature_algorithm = "rsa-sha2-256".to_string();
+        let signature = vec![13, 14, 15, 16];
+
+        let kex_reply = KexEcdhReply {
+            server_host_key_payload: server_host_key_payload.clone(),
+            server_host_key_algorithm: server_host_key_algorithm.clone(),
+            server_host_key: server_host_key.clone(),
+            public_key: public_key.clone(),
+            signature_algorithm: signature_algorithm.clone(),
+            signature: signature.clone(),
+        };
+
+        assert_eq!(
+            kex_reply.server_host_key_payload(),
+            &server_host_key_payload
+        );
+        assert_eq!(
+            kex_reply.server_host_key_algorithm(),
+            &server_host_key_algorithm
+        );
+        assert_eq!(kex_reply.server_host_key(), &server_host_key);
+        assert_eq!(kex_reply.public_key(), &public_key);
+        assert_eq!(kex_reply.signature_algorithm(), &signature_algorithm);
+        assert_eq!(kex_reply.signature(), &signature);
+    }
+}

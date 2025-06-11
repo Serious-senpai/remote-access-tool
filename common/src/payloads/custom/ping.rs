@@ -47,3 +47,62 @@ impl Ping {
         self._data
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use tokio::io::{BufReader, BufWriter};
+
+    use super::*;
+
+    #[tokio::test]
+    async fn test_ping_roundtrip() {
+        let original_ping = Ping::new(42);
+
+        // Write to Vec
+        let mut buffer = Vec::new();
+        {
+            let mut writer = BufWriter::new(&mut buffer);
+            original_ping.to_stream(&mut writer).await.unwrap();
+            writer.flush().await.unwrap();
+        }
+
+        // Read from Vec
+        let mut reader = BufReader::new(buffer.as_slice());
+        let parsed_ping = Ping::from_stream(&mut reader).await.unwrap();
+
+        assert_eq!(original_ping.data(), parsed_ping.data());
+    }
+
+    #[tokio::test]
+    async fn test_ping_opcode() {
+        let ping = Ping::new(123);
+        let mut buffer = Vec::new();
+        {
+            let mut writer = BufWriter::new(&mut buffer);
+            ping.to_stream(&mut writer).await.unwrap();
+            writer.flush().await.unwrap();
+        }
+
+        assert_eq!(buffer[0], Ping::OPCODE);
+        assert_eq!(buffer[1], 123);
+    }
+
+    #[tokio::test]
+    async fn test_ping_data_preservation() {
+        for data_value in [0, 1, 127, 255] {
+            let ping = Ping::new(data_value);
+            let mut buffer = Vec::new();
+            {
+                let mut writer = BufWriter::new(&mut buffer);
+                ping.to_stream(&mut writer).await.unwrap();
+                writer.flush().await.unwrap();
+            }
+
+            let mut reader = BufReader::new(buffer.as_slice());
+            let parsed_ping = Ping::from_stream(&mut reader).await.unwrap();
+
+            assert_eq!(ping.data(), parsed_ping.data());
+            assert_eq!(parsed_ping.data(), data_value);
+        }
+    }
+}

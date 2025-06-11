@@ -49,3 +49,83 @@ impl KexEcdhInit {
         &self.public_key
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use tokio::io::{BufReader, BufWriter};
+
+    use super::*;
+
+    #[tokio::test]
+    async fn test_kex_ecdh_init_roundtrip() {
+        let public_key = vec![1, 2, 3, 4, 5, 6, 7, 8];
+        let payload = KexEcdhInit::new(public_key.clone());
+
+        // Write to Vec
+        let mut buffer = Vec::new();
+        {
+            let mut writer = BufWriter::new(&mut buffer);
+            payload.to_stream(&mut writer).await.unwrap();
+            writer.flush().await.unwrap();
+        }
+
+        // Read from Vec
+        let mut reader = BufReader::new(buffer.as_slice());
+        let parsed_payload = KexEcdhInit::from_stream(&mut reader).await.unwrap();
+
+        assert_eq!(payload.public_key(), parsed_payload.public_key());
+    }
+
+    #[tokio::test]
+    async fn test_kex_ecdh_init_empty_public_key() {
+        let public_key = vec![];
+        let payload = KexEcdhInit::new(public_key.clone());
+
+        let mut buffer = Vec::new();
+        {
+            let mut writer = BufWriter::new(&mut buffer);
+            payload.to_stream(&mut writer).await.unwrap();
+            writer.flush().await.unwrap();
+        }
+
+        let mut reader = BufReader::new(buffer.as_slice());
+        let parsed_payload = KexEcdhInit::from_stream(&mut reader).await.unwrap();
+
+        assert_eq!(payload.public_key(), parsed_payload.public_key());
+        assert!(parsed_payload.public_key().is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_kex_ecdh_init_large_public_key() {
+        let public_key = vec![0xFF; 1024];
+        let payload = KexEcdhInit::new(public_key.clone());
+
+        let mut buffer = Vec::new();
+        {
+            let mut writer = BufWriter::new(&mut buffer);
+            payload.to_stream(&mut writer).await.unwrap();
+            writer.flush().await.unwrap();
+        }
+
+        let mut reader = BufReader::new(buffer.as_slice());
+        let parsed_payload = KexEcdhInit::from_stream(&mut reader).await.unwrap();
+
+        assert_eq!(payload.public_key(), parsed_payload.public_key());
+    }
+
+    #[tokio::test]
+    async fn test_kex_ecdh_init_opcode_verification() {
+        let public_key = vec![1, 2, 3, 4];
+        let payload = KexEcdhInit::new(public_key);
+
+        let mut buffer = Vec::new();
+        {
+            let mut writer = BufWriter::new(&mut buffer);
+            payload.to_stream(&mut writer).await.unwrap();
+            writer.flush().await.unwrap();
+        }
+
+        // Verify the opcode is written correctly
+        assert_eq!(buffer[0], KexEcdhInit::OPCODE);
+    }
+}

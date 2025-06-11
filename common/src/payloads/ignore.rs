@@ -48,3 +48,67 @@ impl Ignore {
         &self.data
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use tokio::io::{BufReader, BufWriter};
+
+    use super::*;
+
+    #[tokio::test]
+    async fn test_ignore_roundtrip() {
+        let original_data = vec![1, 2, 3, 4, 5];
+        let ignore = Ignore::new(original_data.clone());
+
+        // Write to Vec
+        let mut buffer = Vec::new();
+        {
+            let mut writer = BufWriter::new(&mut buffer);
+            ignore.to_stream(&mut writer).await.unwrap();
+            writer.flush().await.unwrap();
+        }
+
+        // Read from Vec
+        let mut reader = BufReader::new(buffer.as_slice());
+        let parsed_ignore = Ignore::from_stream(&mut reader).await.unwrap();
+
+        assert_eq!(ignore.data(), parsed_ignore.data());
+        assert_eq!(original_data, parsed_ignore.data());
+    }
+
+    #[tokio::test]
+    async fn test_ignore_empty_data() {
+        let empty_data = vec![];
+        let ignore = Ignore::new(empty_data.clone());
+
+        let mut buffer = Vec::new();
+        {
+            let mut writer = BufWriter::new(&mut buffer);
+            ignore.to_stream(&mut writer).await.unwrap();
+            writer.flush().await.unwrap();
+        }
+
+        let mut reader = BufReader::new(buffer.as_slice());
+        let parsed_ignore = Ignore::from_stream(&mut reader).await.unwrap();
+
+        assert_eq!(empty_data, parsed_ignore.data());
+    }
+
+    #[tokio::test]
+    async fn test_ignore_large_data() {
+        let large_data = vec![42; 1000];
+        let ignore = Ignore::new(large_data.clone());
+
+        let mut buffer = Vec::new();
+        {
+            let mut writer = BufWriter::new(&mut buffer);
+            ignore.to_stream(&mut writer).await.unwrap();
+            writer.flush().await.unwrap();
+        }
+
+        let mut reader = BufReader::new(buffer.as_slice());
+        let parsed_ignore = Ignore::from_stream(&mut reader).await.unwrap();
+
+        assert_eq!(large_data, parsed_ignore.data());
+    }
+}

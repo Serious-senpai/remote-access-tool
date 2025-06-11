@@ -63,3 +63,57 @@ impl Cancel {
         self._src
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::net::{IpAddr, Ipv4Addr};
+
+    use tokio::io::{BufReader, BufWriter};
+
+    use super::*;
+
+    #[tokio::test]
+    async fn test_cancel_round_trip() {
+        let request_id = 12345;
+        let src = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 100)), 8080);
+        let cancel = Cancel::new(request_id, src);
+
+        // Write to Vec
+        let mut buffer = Vec::new();
+        {
+            let mut writer = BufWriter::new(&mut buffer);
+            cancel.to_stream(&mut writer).await.unwrap();
+            writer.flush().await.unwrap();
+        }
+
+        // Read from Vec
+        let mut reader = BufReader::new(&buffer[..]);
+        let parsed_cancel = Cancel::from_stream(&mut reader).await.unwrap();
+
+        assert_eq!(parsed_cancel.request_id(), request_id);
+        assert_eq!(parsed_cancel.src(), src);
+    }
+
+    #[tokio::test]
+    async fn test_cancel_opcode() {
+        let cancel = Cancel::new(0, SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0));
+        let mut buffer = Vec::new();
+        {
+            let mut writer = BufWriter::new(&mut buffer);
+            cancel.to_stream(&mut writer).await.unwrap();
+            writer.flush().await.unwrap();
+        }
+
+        assert_eq!(buffer[0], Cancel::OPCODE);
+    }
+
+    #[tokio::test]
+    async fn test_cancel_getters() {
+        let request_id = 98765;
+        let src = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1)), 443);
+        let cancel = Cancel::new(request_id, src);
+
+        assert_eq!(cancel.request_id(), request_id);
+        assert_eq!(cancel.src(), src);
+    }
+}

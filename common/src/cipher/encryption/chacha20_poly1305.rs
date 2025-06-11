@@ -155,3 +155,320 @@ impl Cipher for ChaCha20Poly1305 {
         Self::extract_raw_packet(&mut reader).await
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::marker::PhantomData;
+
+    use tokio::io::{BufReader, BufWriter};
+
+    use super::*;
+
+    #[tokio::test]
+    async fn test_create_padding_minimum_length() {
+        let padding = ChaCha20Poly1305::create_padding(10);
+        assert!(padding.len() >= MIN_PADDING_LENGTH);
+
+        // Check that packet structure meets minimum requirements
+        let total_size = 4 + 1 + 10 + padding.len(); // packet_length + padding_length + payload + padding
+        assert!(total_size >= MIN_PACKET_LENGTH);
+    }
+
+    #[tokio::test]
+    async fn test_encrypt_decrypt_roundtrip() {
+        let enc_key = vec![0x42u8; 64]; // 32 bytes for k_payload + 32 bytes for k_length
+        let ctx = CipherCtx {
+            seq: 12345,
+            iv: vec![],
+            enc_key,
+            int_key: vec![],
+            _cipher: PhantomData,
+        };
+
+        let payload = b"Hello, ChaCha20-Poly1305!".to_vec();
+        let packet = Packet::<ChaCha20Poly1305>::from_payload(&ctx, payload.clone())
+            .await
+            .unwrap();
+
+        // Encrypt
+        let (encrypted, mac) = ChaCha20Poly1305::encrypt(
+            &ctx,
+            packet.packet_length,
+            packet.padding_length,
+            &packet.payload,
+            &packet.random_padding,
+        )
+        .await
+        .unwrap();
+
+        // Prepare stream for decryption
+        let mut stream_data = Vec::new();
+        stream_data.extend_from_slice(&encrypted);
+        stream_data.extend_from_slice(&mac);
+        let mut reader = BufReader::new(stream_data.as_slice());
+
+        // Decrypt
+        let decrypted_packet = ChaCha20Poly1305::decrypt(&ctx, &mut reader).await.unwrap();
+
+        assert_eq!(decrypted_packet.payload, payload);
+        assert_eq!(decrypted_packet.packet_length, packet.packet_length);
+        assert_eq!(decrypted_packet.padding_length, packet.padding_length);
+    }
+
+    #[tokio::test]
+    async fn test_encrypt_different_sequences() {
+        let enc_key = vec![0x42u8; 64];
+        let payload = b"test payload".to_vec();
+
+        let ctx1 = CipherCtx {
+            seq: 1,
+            iv: vec![],
+            enc_key: enc_key.clone(),
+            int_key: vec![],
+            _cipher: PhantomData,
+        };
+
+        let ctx2 = CipherCtx {
+            seq: 2,
+            iv: vec![],
+            enc_key,
+            int_key: vec![],
+            _cipher: PhantomData,
+        };
+
+        let packet = Packet::<ChaCha20Poly1305>::from_payload(&ctx1, payload)
+            .await
+            .unwrap();
+
+        let (encrypted1, mac1) = ChaCha20Poly1305::encrypt(
+            &ctx1,
+            packet.packet_length,
+            packet.padding_length,
+            &packet.payload,
+            &packet.random_padding,
+        )
+        .await
+        .unwrap();
+
+        let (encrypted2, mac2) = ChaCha20Poly1305::encrypt(
+            &ctx2,
+            packet.packet_length,
+            packet.padding_length,
+            &packet.payload,
+            &packet.random_padding,
+        )
+        .await
+        .unwrap();
+
+        // Different sequence numbers should produce different ciphertexts
+        assert_ne!(encrypted1, encrypted2);
+        assert_ne!(mac1, mac2);
+    }
+
+    #[tokio::test]
+    async fn test_decrypt_invalid_mac() {
+        let enc_key = vec![0x42u8; 64];
+        let ctx = CipherCtx {
+            seq: 1,
+            iv: vec![],
+            enc_key,
+            int_key: vec![],
+            _cipher: PhantomData,
+        };
+
+        let payload = b"test payload".to_vec();
+        let packet = Packet::<ChaCha20Poly1305>::from_payload(&ctx, payload)
+            .await
+            .unwrap();
+
+        let (encrypted, mut mac) = ChaCha20Poly1305::encrypt(
+            &ctx,
+            packet.packet_length,
+            packet.padding_length,
+            &packet.payload,
+            &packet.random_padding,
+        )
+        .await
+        .unwrap();
+
+        // Corrupt the MAC
+        mac[0] ^= 0xFF;
+
+        let mut stream_data = Vec::new();
+        stream_data.extend_from_slice(&encrypted);
+        stream_data.extend_from_slice(&mac);
+        let mut reader = BufReader::new(stream_data.as_slice());
+
+        let result = ChaCha20Poly1305::decrypt(&ctx, &mut reader).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Invalid MAC"));
+    }
+
+    #[tokio::test]
+    async fn test_decrypt_invalid_packet_length() {
+        let enc_key = vec![0x42u8; 64];
+        let ctx = CipherCtx {
+            seq: 1,
+            iv: vec![],
+            enc_key,
+            int_key: vec![],
+            _cipher: PhantomData,
+        };
+
+        // Create a fake encrypted packet with invalid length (too small)
+        let mut stream_data = Vec::new();
+
+        // Encrypt a packet length that's too small
+        let fake_length = (MIN_PACKET_LENGTH - 1) as u32;
+        let mut length_bytes = Vec::new();
+        length_bytes.extend_from_slice(&fake_length.to_be_bytes());
+
+        let k_length = ctx.enc_key[32..].to_vec();
+        let mut nonce = vec![0u8; 4];
+        let mut writer = BufWriter::new(&mut nonce);
+        writer.write_u32(ctx.seq).await.unwrap();
+        writer.flush().await.unwrap();
+
+        let mut cipher =
+            <ChaCha20Legacy as KeyIvInit>::new(k_length.as_slice().into(), nonce.as_slice().into());
+        cipher.apply_keystream(&mut length_bytes);
+
+        stream_data.extend_from_slice(&length_bytes);
+
+        let mut reader = BufReader::new(stream_data.as_slice());
+        let result = ChaCha20Poly1305::decrypt(&ctx, &mut reader).await;
+
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Invalid packet length"));
+    }
+
+    #[tokio::test]
+    async fn test_packet_to_stream() {
+        let enc_key = vec![0x42u8; 64];
+        let ctx = CipherCtx {
+            seq: 1,
+            iv: vec![],
+            enc_key,
+            int_key: vec![],
+            _cipher: PhantomData,
+        };
+
+        let payload = b"Hello, world!".to_vec();
+        let packet = Packet::<ChaCha20Poly1305>::from_payload(&ctx, payload.clone())
+            .await
+            .unwrap();
+
+        let mut stream_data = Vec::new();
+        {
+            let mut writer = BufWriter::new(&mut stream_data);
+            packet.to_stream(&ctx, &mut writer).await.unwrap();
+            writer.flush().await.unwrap();
+        }
+
+        // Verify we can decrypt what we wrote
+        let mut reader = BufReader::new(stream_data.as_slice());
+        let decrypted_packet = Packet::<ChaCha20Poly1305>::from_stream(&ctx, &mut reader)
+            .await
+            .unwrap();
+
+        assert_eq!(decrypted_packet.payload, payload);
+    }
+
+    #[tokio::test]
+    async fn test_empty_payload() {
+        let enc_key = vec![0x42u8; 64];
+        let ctx = CipherCtx {
+            seq: 1,
+            iv: vec![],
+            enc_key,
+            int_key: vec![],
+            _cipher: PhantomData,
+        };
+
+        let payload = Vec::new();
+        let packet = Packet::<ChaCha20Poly1305>::from_payload(&ctx, payload.clone())
+            .await
+            .unwrap();
+
+        let (encrypted, mac) = ChaCha20Poly1305::encrypt(
+            &ctx,
+            packet.packet_length,
+            packet.padding_length,
+            &packet.payload,
+            &packet.random_padding,
+        )
+        .await
+        .unwrap();
+
+        let mut stream_data = Vec::new();
+        stream_data.extend_from_slice(&encrypted);
+        stream_data.extend_from_slice(&mac);
+        let mut reader = BufReader::new(stream_data.as_slice());
+
+        let decrypted_packet = ChaCha20Poly1305::decrypt(&ctx, &mut reader).await.unwrap();
+        assert_eq!(decrypted_packet.payload, payload);
+    }
+
+    #[tokio::test]
+    async fn test_large_payload() {
+        let enc_key = vec![0x42u8; 64];
+        let ctx = CipherCtx {
+            seq: 1,
+            iv: vec![],
+            enc_key,
+            int_key: vec![],
+            _cipher: PhantomData,
+        };
+
+        let payload = vec![0xABu8; 1000]; // Large payload
+        let packet = Packet::<ChaCha20Poly1305>::from_payload(&ctx, payload.clone())
+            .await
+            .unwrap();
+
+        let (encrypted, mac) = ChaCha20Poly1305::encrypt(
+            &ctx,
+            packet.packet_length,
+            packet.padding_length,
+            &packet.payload,
+            &packet.random_padding,
+        )
+        .await
+        .unwrap();
+
+        let mut stream_data = Vec::new();
+        stream_data.extend_from_slice(&encrypted);
+        stream_data.extend_from_slice(&mac);
+        let mut reader = BufReader::new(stream_data.as_slice());
+
+        let decrypted_packet = ChaCha20Poly1305::decrypt(&ctx, &mut reader).await.unwrap();
+        assert_eq!(decrypted_packet.payload, payload);
+    }
+
+    #[tokio::test]
+    async fn test_peek_opcode() {
+        let enc_key = vec![0x42u8; 64];
+        let ctx = CipherCtx {
+            seq: 1,
+            iv: vec![],
+            enc_key,
+            int_key: vec![],
+            _cipher: PhantomData,
+        };
+
+        let payload = vec![0x14, 0x01, 0x02, 0x03]; // First byte is opcode
+        let packet = Packet::<ChaCha20Poly1305>::from_payload(&ctx, payload)
+            .await
+            .unwrap();
+
+        assert_eq!(packet.peek_opcode(), Some(0x14));
+
+        // Test empty payload
+        let empty_packet = Packet::<ChaCha20Poly1305>::from_payload(&ctx, vec![])
+            .await
+            .unwrap();
+        assert_eq!(empty_packet.peek_opcode(), None);
+    }
+}

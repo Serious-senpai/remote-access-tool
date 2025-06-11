@@ -81,3 +81,111 @@ impl HostKeyAlgorithm for RsaSha512 {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use rsa::pkcs1v15::SigningKey;
+    use rsa::signature::RandomizedSigner;
+    use rsa::traits::PublicKeyParts;
+    use rsa::{RsaPrivateKey, RsaPublicKey};
+    use tokio::io::{AsyncWriteExt, BufWriter};
+
+    use super::*;
+    use crate::utils::write_biguint;
+
+    fn create_test_rsa_keypair() -> (RsaPrivateKey, RsaPublicKey) {
+        let mut rng = rand::thread_rng();
+        let private_key = RsaPrivateKey::new(&mut rng, 2048).unwrap();
+        let public_key = RsaPublicKey::from(&private_key);
+        (private_key, public_key)
+    }
+
+    async fn create_server_host_key_data(public_key: &RsaPublicKey) -> Vec<u8> {
+        let mut buffer = Vec::new();
+        {
+            let mut writer = BufWriter::new(&mut buffer);
+            write_biguint(&mut writer, public_key.e()).await.unwrap();
+            write_biguint(&mut writer, public_key.n()).await.unwrap();
+            writer.flush().await.unwrap();
+        }
+        buffer
+    }
+
+    #[tokio::test]
+    async fn test_verify_valid_signature() {
+        let (private_key, public_key) = create_test_rsa_keypair();
+        let exchange_hash = b"test exchange hash";
+
+        // Create signature using the private key
+        let mut rng = rand::thread_rng();
+        let signing_key = SigningKey::<Sha512>::new(private_key);
+        let signature = signing_key.sign_with_rng(&mut rng, exchange_hash);
+
+        // Create server host key data
+        let server_host_key = create_server_host_key_data(&public_key).await;
+
+        // Verify the signature
+        let result =
+            RsaSha512::verify(exchange_hash, &signature.to_bytes(), &server_host_key).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_verify_invalid_signature() {
+        let (_, public_key) = create_test_rsa_keypair();
+        let exchange_hash = b"test exchange hash";
+        let invalid_signature = vec![0u8; 256]; // Invalid signature
+
+        let server_host_key = create_server_host_key_data(&public_key).await;
+
+        let result = RsaSha512::verify(exchange_hash, &invalid_signature, &server_host_key).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_verify_wrong_hash() {
+        let (private_key, public_key) = create_test_rsa_keypair();
+        let original_hash = b"original hash";
+        let different_hash = b"different hash";
+
+        // Sign with original hash
+        let mut rng = rand::thread_rng();
+        let signing_key = SigningKey::<Sha512>::new(private_key);
+        let signature = signing_key.sign_with_rng(&mut rng, original_hash);
+
+        let server_host_key = create_server_host_key_data(&public_key).await;
+
+        // Try to verify with different hash
+        let result =
+            RsaSha512::verify(different_hash, &signature.to_bytes(), &server_host_key).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_verify_malformed_server_host_key() {
+        let exchange_hash = b"test hash";
+        let signature = vec![0u8; 256];
+        let malformed_key = vec![0u8; 10]; // Too short to contain valid RSA key data
+
+        let result = RsaSha512::verify(exchange_hash, &signature, &malformed_key).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_verify_empty_signature() {
+        let (_, public_key) = create_test_rsa_keypair();
+        let exchange_hash = b"test hash";
+        let empty_signature = vec![];
+
+        let server_host_key = create_server_host_key_data(&public_key).await;
+
+        let result = RsaSha512::verify(exchange_hash, &empty_signature, &server_host_key).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_algorithm_constants() {
+        assert_eq!(RsaSha512::HOST_KEY_ALGORITHM, "ssh-rsa");
+        assert_eq!(RsaSha512::SIGNATURE_ALGORITHM, "rsa-sha2-512");
+    }
+}

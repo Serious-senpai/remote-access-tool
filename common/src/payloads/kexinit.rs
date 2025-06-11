@@ -301,3 +301,176 @@ impl KexInit {
                 .contains(&check)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use tokio::io::{BufReader, BufWriter};
+
+    use super::*;
+
+    #[tokio::test]
+    async fn test_kexinit_round_trip() {
+        let kexinit = KexInit::new(
+            vec!["diffie-hellman-group14-sha256"],
+            vec!["ssh-rsa"],
+            vec!["aes128-ctr"],
+            vec!["aes128-ctr"],
+            vec!["hmac-sha2-256"],
+            vec!["hmac-sha2-256"],
+            vec!["none"],
+            vec!["none"],
+            vec![""],
+            vec![""],
+            false,
+        );
+
+        // Write to Vec
+        let mut buffer = Vec::new();
+        {
+            let mut writer = BufWriter::new(&mut buffer);
+            kexinit.to_stream(&mut writer).await.unwrap();
+            writer.flush().await.unwrap();
+        }
+
+        // Read from Vec
+        let mut reader = BufReader::new(buffer.as_slice());
+        let parsed_kexinit = KexInit::from_stream(&mut reader).await.unwrap();
+
+        // Verify fields match
+        assert_eq!(kexinit.kex_algorithms(), parsed_kexinit.kex_algorithms());
+        assert_eq!(
+            kexinit.server_host_key_algorithms(),
+            parsed_kexinit.server_host_key_algorithms()
+        );
+        assert_eq!(
+            kexinit.encryption_algorithms_client_to_server(),
+            parsed_kexinit.encryption_algorithms_client_to_server()
+        );
+        assert_eq!(
+            kexinit.encryption_algorithms_server_to_client(),
+            parsed_kexinit.encryption_algorithms_server_to_client()
+        );
+        assert_eq!(
+            kexinit.mac_algorithms_client_to_server(),
+            parsed_kexinit.mac_algorithms_client_to_server()
+        );
+        assert_eq!(
+            kexinit.mac_algorithms_server_to_client(),
+            parsed_kexinit.mac_algorithms_server_to_client()
+        );
+        assert_eq!(
+            kexinit.compression_algorithms_client_to_server(),
+            parsed_kexinit.compression_algorithms_client_to_server()
+        );
+        assert_eq!(
+            kexinit.compression_algorithms_server_to_client(),
+            parsed_kexinit.compression_algorithms_server_to_client()
+        );
+        assert_eq!(
+            kexinit.languages_client_to_server(),
+            parsed_kexinit.languages_client_to_server()
+        );
+        assert_eq!(
+            kexinit.languages_server_to_client(),
+            parsed_kexinit.languages_server_to_client()
+        );
+        assert_eq!(
+            kexinit.first_kex_packet_follows(),
+            parsed_kexinit.first_kex_packet_follows()
+        );
+        assert_eq!(kexinit.reserved(), parsed_kexinit.reserved());
+    }
+
+    #[tokio::test]
+    async fn test_kexinit_with_multiple_algorithms() {
+        let kexinit = KexInit::new(
+            vec!["diffie-hellman-group14-sha256", "ecdh-sha2-nistp256"],
+            vec!["ssh-rsa", "ssh-ed25519"],
+            vec!["aes128-ctr", "aes256-ctr"],
+            vec!["aes128-ctr", "aes256-ctr"],
+            vec!["hmac-sha2-256", "hmac-sha2-512"],
+            vec!["hmac-sha2-256", "hmac-sha2-512"],
+            vec!["none", "zlib"],
+            vec!["none", "zlib"],
+            vec!["en-US"],
+            vec!["en-US"],
+            true,
+        );
+
+        let mut buffer = Vec::new();
+        {
+            let mut writer = BufWriter::new(&mut buffer);
+            kexinit.to_stream(&mut writer).await.unwrap();
+            writer.flush().await.unwrap();
+        }
+
+        let mut reader = BufReader::new(buffer.as_slice());
+        let parsed_kexinit = KexInit::from_stream(&mut reader).await.unwrap();
+
+        assert_eq!(kexinit.kex_algorithms().len(), 2);
+        assert_eq!(kexinit.server_host_key_algorithms().len(), 2);
+        assert_eq!(kexinit.first_kex_packet_follows(), true);
+        assert_eq!(parsed_kexinit.first_kex_packet_follows(), true);
+    }
+
+    #[tokio::test]
+    async fn test_kexinit_empty_lists() {
+        let kexinit = KexInit::new(
+            vec!["diffie-hellman-group14-sha256"],
+            vec!["ssh-rsa"],
+            vec!["aes128-ctr"],
+            vec!["aes128-ctr"],
+            vec!["hmac-sha2-256"],
+            vec!["hmac-sha2-256"],
+            vec!["none"],
+            vec!["none"],
+            Vec::<String>::new(),
+            Vec::<String>::new(),
+            false,
+        );
+
+        let mut buffer = Vec::new();
+        {
+            let mut writer = BufWriter::new(&mut buffer);
+            kexinit.to_stream(&mut writer).await.unwrap();
+            writer.flush().await.unwrap();
+        }
+
+        let mut reader = BufReader::new(buffer.as_slice());
+        let parsed_kexinit = KexInit::from_stream(&mut reader).await.unwrap();
+
+        // We treat empty strings as a list with one empty string
+        assert_eq!(parsed_kexinit.languages_client_to_server().len(), 1);
+        assert_eq!(parsed_kexinit.languages_server_to_client().len(), 1);
+        assert_eq!(parsed_kexinit.languages_client_to_server()[0], "");
+        assert_eq!(parsed_kexinit.languages_server_to_client()[0], "");
+    }
+
+    #[tokio::test]
+    async fn test_kexinit_opcode() {
+        let kexinit = KexInit::new(
+            vec!["diffie-hellman-group14-sha256"],
+            vec!["ssh-rsa"],
+            vec!["aes128-ctr"],
+            vec!["aes128-ctr"],
+            vec!["hmac-sha2-256"],
+            vec!["hmac-sha2-256"],
+            vec!["none"],
+            vec!["none"],
+            vec![""],
+            vec![""],
+            false,
+        );
+
+        let mut buffer = Vec::new();
+        {
+            let mut writer = BufWriter::new(&mut buffer);
+            kexinit.to_stream(&mut writer).await.unwrap();
+            writer.flush().await.unwrap();
+        }
+
+        // Check that the first byte is the correct opcode
+        assert_eq!(buffer[0], KexInit::OPCODE);
+        assert_eq!(buffer[0], 20);
+    }
+}

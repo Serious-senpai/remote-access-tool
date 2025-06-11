@@ -106,3 +106,113 @@ impl Query {
         &self._qtype
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::net::{IpAddr, Ipv4Addr};
+
+    use tokio::io::{BufReader, BufWriter};
+
+    use super::*;
+
+    #[tokio::test]
+    async fn test_authenticate_query_roundtrip() {
+        let rkey = b"test_key".to_vec();
+        let query = Query::new(42, QueryType::Authenticate { rkey: rkey.clone() });
+
+        // Write to Vec
+        let mut buffer = Vec::new();
+        {
+            let mut writer = BufWriter::new(&mut buffer);
+            query.to_stream(&mut writer).await.unwrap();
+            writer.flush().await.unwrap();
+        }
+
+        // Read from Vec
+        let mut reader = BufReader::new(buffer.as_slice());
+        let parsed_query = Query::from_stream(&mut reader).await.unwrap();
+
+        assert_eq!(parsed_query.request_id(), 42);
+        match parsed_query.qtype() {
+            QueryType::Authenticate { rkey: parsed_rkey } => {
+                assert_eq!(parsed_rkey, &rkey);
+            }
+            _ => panic!("Expected Authenticate query type"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_client_ls_query_roundtrip() {
+        let query = Query::new(123, QueryType::ClientLs);
+
+        // Write to Vec
+        let mut buffer = Vec::new();
+        {
+            let mut writer = BufWriter::new(&mut buffer);
+            query.to_stream(&mut writer).await.unwrap();
+            writer.flush().await.unwrap();
+        }
+
+        // Read from Vec
+        let mut reader = BufReader::new(buffer.as_slice());
+        let parsed_query = Query::from_stream(&mut reader).await.unwrap();
+
+        assert_eq!(parsed_query.request_id(), 123);
+        match parsed_query.qtype() {
+            QueryType::ClientLs => {}
+            _ => panic!("Expected ClientLs query type"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_client_disconnect_query_roundtrip() {
+        let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1)), 8080);
+        let query = Query::new(456, QueryType::ClientDisconnect { addr });
+
+        // Write to Vec
+        let mut buffer = Vec::new();
+        {
+            let mut writer = BufWriter::new(&mut buffer);
+            query.to_stream(&mut writer).await.unwrap();
+            writer.flush().await.unwrap();
+        }
+
+        // Read from Vec
+        let mut reader = BufReader::new(buffer.as_slice());
+        let parsed_query = Query::from_stream(&mut reader).await.unwrap();
+
+        assert_eq!(parsed_query.request_id(), 456);
+        match parsed_query.qtype() {
+            QueryType::ClientDisconnect { addr: parsed_addr } => {
+                assert_eq!(parsed_addr, &addr);
+            }
+            _ => panic!("Expected ClientDisconnect query type"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_invalid_opcode() {
+        let mut buffer = vec![99]; // Invalid opcode
+        buffer.extend_from_slice(&42u32.to_be_bytes()); // request_id
+        buffer.push(0); // query type
+        buffer.extend_from_slice(&4u32.to_be_bytes()); // string length
+        buffer.extend_from_slice(b"test"); // string data
+
+        let mut reader = BufReader::new(buffer.as_slice());
+        let result = Query::from_stream(&mut reader).await;
+
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_invalid_query_type() {
+        let mut buffer = vec![Query::OPCODE];
+        buffer.extend_from_slice(&42u32.to_be_bytes()); // request_id
+        buffer.push(99); // Invalid query type
+
+        let mut reader = BufReader::new(buffer.as_slice());
+        let result = Query::from_stream(&mut reader).await;
+
+        assert!(result.is_err());
+    }
+}

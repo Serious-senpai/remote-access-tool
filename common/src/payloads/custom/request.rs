@@ -176,3 +176,182 @@ impl Request {
         &self._rtype
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::net::{IpAddr, Ipv4Addr};
+
+    use tokio::io::{BufReader, BufWriter};
+
+    use super::*;
+
+    #[tokio::test]
+    async fn test_request_pwd_roundtrip() {
+        let request = Request::new(
+            42,
+            SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080),
+            SocketAddr::new(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1)), 9000),
+            RequestType::Pwd,
+        );
+
+        let mut buffer = Vec::new();
+        {
+            let mut writer = BufWriter::new(&mut buffer);
+            request.to_stream(&mut writer).await.unwrap();
+            writer.flush().await.unwrap();
+        }
+
+        let mut reader = BufReader::new(buffer.as_slice());
+        let parsed = Request::from_stream(&mut reader).await.unwrap();
+
+        assert_eq!(request.request_id(), parsed.request_id());
+        assert_eq!(request.src(), parsed.src());
+        assert_eq!(request.dest(), parsed.dest());
+        matches!(parsed.rtype(), RequestType::Pwd);
+    }
+
+    #[tokio::test]
+    async fn test_request_ls_roundtrip() {
+        let request = Request::new(
+            123,
+            SocketAddr::new(IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1)), 3000),
+            SocketAddr::new(IpAddr::V4(Ipv4Addr::new(172, 16, 0, 1)), 4000),
+            RequestType::Ls {
+                path: PathBuf::from("/home/user"),
+            },
+        );
+
+        let mut buffer = Vec::new();
+        {
+            let mut writer = BufWriter::new(&mut buffer);
+            request.to_stream(&mut writer).await.unwrap();
+            writer.flush().await.unwrap();
+        }
+
+        let mut reader = BufReader::new(buffer.as_slice());
+        let parsed = Request::from_stream(&mut reader).await.unwrap();
+
+        assert_eq!(request.request_id(), parsed.request_id());
+        assert_eq!(request.src(), parsed.src());
+        assert_eq!(request.dest(), parsed.dest());
+        if let RequestType::Ls { path } = parsed.rtype() {
+            assert_eq!(path, &PathBuf::from("/home/user"));
+        } else {
+            panic!("Expected Ls request type");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_request_download_ack_roundtrip() {
+        let request = Request::new(
+            456,
+            SocketAddr::new(IpAddr::V4(Ipv4Addr::new(192, 168, 0, 1)), 5000),
+            SocketAddr::new(IpAddr::V4(Ipv4Addr::new(10, 10, 10, 10)), 6000),
+            RequestType::DownloadAck {
+                request_id: 789,
+                received: 1024,
+            },
+        );
+
+        let mut buffer = Vec::new();
+        {
+            let mut writer = BufWriter::new(&mut buffer);
+            request.to_stream(&mut writer).await.unwrap();
+            writer.flush().await.unwrap();
+        }
+
+        let mut reader = BufReader::new(buffer.as_slice());
+        let parsed = Request::from_stream(&mut reader).await.unwrap();
+
+        assert_eq!(request.request_id(), parsed.request_id());
+        assert_eq!(request.src(), parsed.src());
+        assert_eq!(request.dest(), parsed.dest());
+        if let RequestType::DownloadAck {
+            request_id,
+            received,
+        } = parsed.rtype()
+        {
+            assert_eq!(*request_id, 789);
+            assert_eq!(*received, 1024);
+        } else {
+            panic!("Expected DownloadAck request type");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_request_kill_roundtrip() {
+        let request = Request::new(
+            999,
+            SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 7000),
+            SocketAddr::new(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 100)), 8000),
+            RequestType::Kill {
+                pid: 12345,
+                signal: "SIGTERM".to_string(),
+            },
+        );
+
+        let mut buffer = Vec::new();
+        {
+            let mut writer = BufWriter::new(&mut buffer);
+            request.to_stream(&mut writer).await.unwrap();
+            writer.flush().await.unwrap();
+        }
+
+        let mut reader = BufReader::new(buffer.as_slice());
+        let parsed = Request::from_stream(&mut reader).await.unwrap();
+
+        assert_eq!(request.request_id(), parsed.request_id());
+        assert_eq!(request.src(), parsed.src());
+        assert_eq!(request.dest(), parsed.dest());
+        if let RequestType::Kill { pid, signal } = parsed.rtype() {
+            assert_eq!(*pid, 12345);
+            assert_eq!(signal, "SIGTERM");
+        } else {
+            panic!("Expected Kill request type");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_request_all_types_roundtrip() {
+        let test_cases = vec![
+            RequestType::Pwd,
+            RequestType::Ps,
+            RequestType::Ls {
+                path: PathBuf::from("/tmp"),
+            },
+            RequestType::Cd {
+                path: PathBuf::from("/var/log"),
+            },
+            RequestType::Download {
+                path: PathBuf::from("/etc/passwd"),
+            },
+            RequestType::Rm {
+                path: PathBuf::from("/tmp/file.txt"),
+            },
+        ];
+
+        for (i, rtype) in test_cases.into_iter().enumerate() {
+            let request = Request::new(
+                i as u32,
+                SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080),
+                SocketAddr::new(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1)), 9000),
+                rtype,
+            );
+
+            let mut buffer = Vec::new();
+            {
+                let mut writer = BufWriter::new(&mut buffer);
+                request.to_stream(&mut writer).await.unwrap();
+                writer.flush().await.unwrap();
+            }
+
+            let mut reader = BufReader::new(buffer.as_slice());
+            let parsed = Request::from_stream(&mut reader).await.unwrap();
+
+            assert_eq!(request.request_id(), parsed.request_id());
+            assert_eq!(request.src(), parsed.src());
+            assert_eq!(request.dest(), parsed.dest());
+            assert_eq!(request.rtype().opcode(), parsed.rtype().opcode());
+        }
+    }
+}

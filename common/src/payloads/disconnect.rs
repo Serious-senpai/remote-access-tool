@@ -77,3 +77,87 @@ impl Disconnect {
         &self.language_tag
     }
 }
+#[cfg(test)]
+mod tests {
+    use tokio::io::{BufReader, BufWriter};
+
+    use super::*;
+
+    #[tokio::test]
+    async fn test_disconnect_roundtrip() {
+        let original = Disconnect::new(42, "Connection lost", "en-US");
+
+        // Write to Vec
+        let mut buffer = Vec::new();
+        {
+            let mut writer = BufWriter::new(&mut buffer);
+            original.to_stream(&mut writer).await.unwrap();
+            writer.flush().await.unwrap();
+        }
+
+        // Read from Vec
+        let mut reader = BufReader::new(buffer.as_slice());
+        let parsed = Disconnect::from_stream(&mut reader).await.unwrap();
+
+        assert_eq!(original.reason_code(), parsed.reason_code());
+        assert_eq!(original.description(), parsed.description());
+        assert_eq!(original.language_tag(), parsed.language_tag());
+    }
+
+    #[tokio::test]
+    async fn test_disconnect_empty_strings() {
+        let original = Disconnect::new(0, "", "");
+
+        let mut buffer = Vec::new();
+        {
+            let mut writer = BufWriter::new(&mut buffer);
+            original.to_stream(&mut writer).await.unwrap();
+            writer.flush().await.unwrap();
+        }
+
+        let mut reader = BufReader::new(buffer.as_slice());
+        let parsed = Disconnect::from_stream(&mut reader).await.unwrap();
+
+        assert_eq!(original.reason_code(), parsed.reason_code());
+        assert_eq!(original.description(), parsed.description());
+        assert_eq!(original.language_tag(), parsed.language_tag());
+    }
+
+    #[tokio::test]
+    async fn test_disconnect_max_values() {
+        let original = Disconnect::new(
+            u32::MAX,
+            "Very long description".repeat(100),
+            "en-US-x-test",
+        );
+
+        let mut buffer = Vec::new();
+        {
+            let mut writer = BufWriter::new(&mut buffer);
+            original.to_stream(&mut writer).await.unwrap();
+            writer.flush().await.unwrap();
+        }
+
+        let mut reader = BufReader::new(buffer.as_slice());
+        let parsed = Disconnect::from_stream(&mut reader).await.unwrap();
+
+        assert_eq!(original.reason_code(), parsed.reason_code());
+        assert_eq!(original.description(), parsed.description());
+        assert_eq!(original.language_tag(), parsed.language_tag());
+    }
+
+    #[tokio::test]
+    async fn test_disconnect_opcode_verification() {
+        let disconnect = Disconnect::new(1, "test", "en");
+
+        let mut buffer = Vec::new();
+        {
+            let mut writer = BufWriter::new(&mut buffer);
+            disconnect.to_stream(&mut writer).await.unwrap();
+            writer.flush().await.unwrap();
+        }
+
+        // Verify opcode is written correctly
+        assert_eq!(buffer[0], Disconnect::OPCODE);
+    }
+}

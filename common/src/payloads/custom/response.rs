@@ -323,3 +323,271 @@ impl Response {
         &self._rtype
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use tokio::io::{BufReader, BufWriter};
+
+    use super::*;
+
+    async fn test_round_trip(response: Response) {
+        let mut buffer = Vec::new();
+        {
+            let mut writer = BufWriter::new(&mut buffer);
+            response.to_stream(&mut writer).await.unwrap();
+            writer.flush().await.unwrap();
+        }
+
+        let mut reader = BufReader::new(buffer.as_slice());
+        let parsed = Response::from_stream(&mut reader).await.unwrap();
+
+        assert_eq!(response.request_id(), parsed.request_id());
+        assert_eq!(response.src(), parsed.src());
+        assert_eq!(response.dest(), parsed.dest());
+
+        match (response.rtype(), parsed.rtype()) {
+            (ResponseType::Pwd { path: p1 }, ResponseType::Pwd { path: p2 }) => {
+                assert_eq!(p1, p2);
+            }
+            (ResponseType::Ls { entries: e1 }, ResponseType::Ls { entries: e2 }) => {
+                assert_eq!(e1.len(), e2.len());
+                for (entry1, entry2) in e1.iter().zip(e2.iter()) {
+                    assert_eq!(entry1.file_name, entry2.file_name);
+                    assert_eq!(entry1.file_type, entry2.file_type);
+                    match (&entry1.metadata, &entry2.metadata) {
+                        (Some(m1), Some(m2)) => {
+                            assert_eq!(m1.size, m2.size);
+                            assert_eq!(
+                                m1.created_at
+                                    .duration_since(SystemTime::UNIX_EPOCH)
+                                    .unwrap()
+                                    .as_secs(),
+                                m2.created_at
+                                    .duration_since(SystemTime::UNIX_EPOCH)
+                                    .unwrap()
+                                    .as_secs()
+                            );
+                            assert_eq!(
+                                m1.modified_at
+                                    .duration_since(SystemTime::UNIX_EPOCH)
+                                    .unwrap()
+                                    .as_secs(),
+                                m2.modified_at
+                                    .duration_since(SystemTime::UNIX_EPOCH)
+                                    .unwrap()
+                                    .as_secs()
+                            );
+                        }
+                        (None, None) => {}
+                        _ => panic!("Metadata mismatch"),
+                    }
+                }
+            }
+            (
+                ResponseType::DownloadChunk {
+                    total: t1,
+                    data: d1,
+                },
+                ResponseType::DownloadChunk {
+                    total: t2,
+                    data: d2,
+                },
+            ) => {
+                assert_eq!(t1, t2);
+                assert_eq!(d1, d2);
+            }
+            (ResponseType::Error { message: m1 }, ResponseType::Error { message: m2 }) => {
+                assert_eq!(m1, m2);
+            }
+            (ResponseType::Success, ResponseType::Success) => {}
+            (ResponseType::ClientLs { clients: c1 }, ResponseType::ClientLs { clients: c2 }) => {
+                assert_eq!(c1.len(), c2.len());
+                for (client1, client2) in c1.iter().zip(c2.iter()) {
+                    assert_eq!(client1.addr, client2.addr);
+                    assert_eq!(client1.version, client2.version);
+                    assert_eq!(client1.is_admin, client2.is_admin);
+                }
+            }
+            (ResponseType::Ps { processes: p1 }, ResponseType::Ps { processes: p2 }) => {
+                assert_eq!(p1.len(), p2.len());
+                for (proc1, proc2) in p1.iter().zip(p2.iter()) {
+                    assert_eq!(proc1.pid, proc2.pid);
+                    assert_eq!(proc1.accumulated_cpu_time, proc2.accumulated_cpu_time);
+                    assert_eq!(proc1.cmd, proc2.cmd);
+                    assert_eq!(proc1.cpu_usage, proc2.cpu_usage);
+                    assert_eq!(proc1.memory, proc2.memory);
+                    assert_eq!(proc1.name, proc2.name);
+                    assert_eq!(proc1.run_time, proc2.run_time);
+                }
+            }
+            _ => panic!("Response type mismatch"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_pwd_response() {
+        let response = Response::new(
+            123,
+            "127.0.0.1:8080".parse().unwrap(),
+            "127.0.0.1:9090".parse().unwrap(),
+            ResponseType::Pwd {
+                path: PathBuf::from("/home/user"),
+            },
+        );
+        test_round_trip(response).await;
+    }
+
+    #[tokio::test]
+    async fn test_ls_response_with_metadata() {
+        let metadata = EntryMetadata {
+            created_at: SystemTime::UNIX_EPOCH + Duration::from_secs(1234567890),
+            modified_at: SystemTime::UNIX_EPOCH + Duration::from_secs(1234567900),
+            size: 1024,
+        };
+
+        let response = Response::new(
+            456,
+            "192.168.1.1:3000".parse().unwrap(),
+            "192.168.1.2:4000".parse().unwrap(),
+            ResponseType::Ls {
+                entries: vec![
+                    Entry {
+                        file_name: "file1.txt".to_string(),
+                        file_type: "file".to_string(),
+                        metadata: Some(metadata.clone()),
+                    },
+                    Entry {
+                        file_name: "dir1".to_string(),
+                        file_type: "directory".to_string(),
+                        metadata: None,
+                    },
+                ],
+            },
+        );
+        test_round_trip(response).await;
+    }
+
+    #[tokio::test]
+    async fn test_download_chunk_response() {
+        let response = Response::new(
+            789,
+            "10.0.0.1:5000".parse().unwrap(),
+            "10.0.0.2:6000".parse().unwrap(),
+            ResponseType::DownloadChunk {
+                total: 2048,
+                data: vec![0x41, 0x42, 0x43, 0x44],
+            },
+        );
+        test_round_trip(response).await;
+    }
+
+    #[tokio::test]
+    async fn test_error_response() {
+        let response = Response::new(
+            999,
+            "172.16.0.1:7000".parse().unwrap(),
+            "172.16.0.2:8000".parse().unwrap(),
+            ResponseType::Error {
+                message: "Something went wrong".to_string(),
+            },
+        );
+        test_round_trip(response).await;
+    }
+
+    #[tokio::test]
+    async fn test_success_response() {
+        let response = Response::new(
+            111,
+            "127.0.0.1:1111".parse().unwrap(),
+            "127.0.0.1:2222".parse().unwrap(),
+            ResponseType::Success,
+        );
+        test_round_trip(response).await;
+    }
+
+    #[tokio::test]
+    async fn test_client_ls_response() {
+        let response = Response::new(
+            222,
+            "0.0.0.0:0".parse().unwrap(),
+            "255.255.255.255:65535".parse().unwrap(),
+            ResponseType::ClientLs {
+                clients: vec![
+                    ClientEntry {
+                        addr: "192.168.1.100:8080".parse().unwrap(),
+                        version: "1.0.0".to_string(),
+                        is_admin: true,
+                    },
+                    ClientEntry {
+                        addr: "192.168.1.101:8081".parse().unwrap(),
+                        version: "1.1.0".to_string(),
+                        is_admin: false,
+                    },
+                ],
+            },
+        );
+        test_round_trip(response).await;
+    }
+
+    #[tokio::test]
+    async fn test_ps_response() {
+        let response = Response::new(
+            333,
+            "127.0.0.1:12345".parse().unwrap(),
+            "127.0.0.1:54321".parse().unwrap(),
+            ResponseType::Ps {
+                processes: vec![
+                    ProcessEntry {
+                        pid: 1234,
+                        accumulated_cpu_time: 500000,
+                        cmd: "/usr/bin/firefox".to_string(),
+                        cpu_usage: 15.5,
+                        memory: 1073741824,
+                        name: "firefox".to_string(),
+                        run_time: 3600,
+                    },
+                    ProcessEntry {
+                        pid: 5678,
+                        accumulated_cpu_time: 100000,
+                        cmd: "/bin/bash".to_string(),
+                        cpu_usage: 0.1,
+                        memory: 8388608,
+                        name: "bash".to_string(),
+                        run_time: 7200,
+                    },
+                ],
+            },
+        );
+        test_round_trip(response).await;
+    }
+
+    #[tokio::test]
+    async fn test_empty_collections() {
+        // Test empty ls
+        let response = Response::new(
+            444,
+            "127.0.0.1:1000".parse().unwrap(),
+            "127.0.0.1:2000".parse().unwrap(),
+            ResponseType::Ls { entries: vec![] },
+        );
+        test_round_trip(response).await;
+
+        // Test empty client list
+        let response = Response::new(
+            555,
+            "127.0.0.1:1000".parse().unwrap(),
+            "127.0.0.1:2000".parse().unwrap(),
+            ResponseType::ClientLs { clients: vec![] },
+        );
+        test_round_trip(response).await;
+
+        // Test empty process list
+        let response = Response::new(
+            666,
+            "127.0.0.1:1000".parse().unwrap(),
+            "127.0.0.1:2000".parse().unwrap(),
+            ResponseType::Ps { processes: vec![] },
+        );
+        test_round_trip(response).await;
+    }
+}
