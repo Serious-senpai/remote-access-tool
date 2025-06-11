@@ -19,3 +19,9 @@ jobs:
 
       - name: Run unit tests
         run: cargo test
+
+      - name: Install cargo-llvm-cov
+        run: cargo install cargo-llvm-cov
+
+      - name: Measure coverage
+        run: cargo llvm-cov
