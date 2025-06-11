@@ -101,7 +101,7 @@ mod tests {
     }
 
     async fn create_server_host_key_data(public_key: &RsaPublicKey) -> Vec<u8> {
-        let mut buffer = Vec::new();
+        let mut buffer = vec![];
         {
             let mut writer = BufWriter::new(&mut buffer);
             write_biguint(&mut writer, public_key.e()).await.unwrap();

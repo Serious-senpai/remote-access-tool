@@ -194,7 +194,7 @@ mod tests {
             RequestType::Pwd,
         );
 
-        let mut buffer = Vec::new();
+        let mut buffer = vec![];
         {
             let mut writer = BufWriter::new(&mut buffer);
             request.to_stream(&mut writer).await.unwrap();
@@ -221,7 +221,7 @@ mod tests {
             },
         );
 
-        let mut buffer = Vec::new();
+        let mut buffer = vec![];
         {
             let mut writer = BufWriter::new(&mut buffer);
             request.to_stream(&mut writer).await.unwrap();
@@ -253,7 +253,7 @@ mod tests {
             },
         );
 
-        let mut buffer = Vec::new();
+        let mut buffer = vec![];
         {
             let mut writer = BufWriter::new(&mut buffer);
             request.to_stream(&mut writer).await.unwrap();
@@ -290,7 +290,7 @@ mod tests {
             },
         );
 
-        let mut buffer = Vec::new();
+        let mut buffer = vec![];
         {
             let mut writer = BufWriter::new(&mut buffer);
             request.to_stream(&mut writer).await.unwrap();
@@ -338,7 +338,7 @@ mod tests {
                 rtype,
             );
 
-            let mut buffer = Vec::new();
+            let mut buffer = vec![];
             {
                 let mut writer = BufWriter::new(&mut buffer);
                 request.to_stream(&mut writer).await.unwrap();

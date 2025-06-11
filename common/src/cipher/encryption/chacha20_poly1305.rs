@@ -202,7 +202,7 @@ mod tests {
         .unwrap();
 
         // Prepare stream for decryption
-        let mut stream_data = Vec::new();
+        let mut stream_data = vec![];
         stream_data.extend_from_slice(&encrypted);
         stream_data.extend_from_slice(&mac);
         let mut reader = BufReader::new(stream_data.as_slice());
@@ -294,7 +294,7 @@ mod tests {
         // Corrupt the MAC
         mac[0] ^= 0xFF;
 
-        let mut stream_data = Vec::new();
+        let mut stream_data = vec![];
         stream_data.extend_from_slice(&encrypted);
         stream_data.extend_from_slice(&mac);
         let mut reader = BufReader::new(stream_data.as_slice());
@@ -316,11 +316,11 @@ mod tests {
         };
 
         // Create a fake encrypted packet with invalid length (too small)
-        let mut stream_data = Vec::new();
+        let mut stream_data = vec![];
 
         // Encrypt a packet length that's too small
         let fake_length = (MIN_PACKET_LENGTH - 1) as u32;
-        let mut length_bytes = Vec::new();
+        let mut length_bytes = vec![];
         length_bytes.extend_from_slice(&fake_length.to_be_bytes());
 
         let k_length = ctx.enc_key[32..].to_vec();
@@ -361,7 +361,7 @@ mod tests {
             .await
             .unwrap();
 
-        let mut stream_data = Vec::new();
+        let mut stream_data = vec![];
         {
             let mut writer = BufWriter::new(&mut stream_data);
             packet.to_stream(&ctx, &mut writer).await.unwrap();
@@ -388,7 +388,7 @@ mod tests {
             _cipher: PhantomData,
         };
 
-        let payload = Vec::new();
+        let payload = vec![];
         let packet = Packet::<ChaCha20Poly1305>::from_payload(&ctx, payload.clone())
             .await
             .unwrap();
@@ -403,7 +403,7 @@ mod tests {
         .await
         .unwrap();
 
-        let mut stream_data = Vec::new();
+        let mut stream_data = vec![];
         stream_data.extend_from_slice(&encrypted);
         stream_data.extend_from_slice(&mac);
         let mut reader = BufReader::new(stream_data.as_slice());
@@ -438,7 +438,7 @@ mod tests {
         .await
         .unwrap();
 
-        let mut stream_data = Vec::new();
+        let mut stream_data = vec![];
         stream_data.extend_from_slice(&encrypted);
         stream_data.extend_from_slice(&mac);
         let mut reader = BufReader::new(stream_data.as_slice());

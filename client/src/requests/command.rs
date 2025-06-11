@@ -3,6 +3,7 @@ use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use clap::builder::PossibleValue;
 use common::cipher::encryption::Cipher;
 
 use crate::broadcast::BroadcastLayer;
@@ -203,7 +204,10 @@ where
                             .short('s')
                             .long("signal")
                             .default_value("TERM")
-                            .value_parser(clap::value_parser!(String)),
+                            .value_parser([
+                                PossibleValue::new("TERM").help("Send SIGTERM signal"),
+                                PossibleValue::new("KILL").help("Send SIGKILL signal"),
+                            ]),
                     ),
             )
             .subcommand(

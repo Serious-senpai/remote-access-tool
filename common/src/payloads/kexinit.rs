@@ -325,7 +325,7 @@ mod tests {
         );
 
         // Write to Vec
-        let mut buffer = Vec::new();
+        let mut buffer = vec![];
         {
             let mut writer = BufWriter::new(&mut buffer);
             kexinit.to_stream(&mut writer).await.unwrap();
@@ -397,7 +397,7 @@ mod tests {
             true,
         );
 
-        let mut buffer = Vec::new();
+        let mut buffer = vec![];
         {
             let mut writer = BufWriter::new(&mut buffer);
             kexinit.to_stream(&mut writer).await.unwrap();
@@ -429,7 +429,7 @@ mod tests {
             false,
         );
 
-        let mut buffer = Vec::new();
+        let mut buffer = vec![];
         {
             let mut writer = BufWriter::new(&mut buffer);
             kexinit.to_stream(&mut writer).await.unwrap();
@@ -462,7 +462,7 @@ mod tests {
             false,
         );
 
-        let mut buffer = Vec::new();
+        let mut buffer = vec![];
         {
             let mut writer = BufWriter::new(&mut buffer);
             kexinit.to_stream(&mut writer).await.unwrap();

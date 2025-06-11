@@ -121,7 +121,7 @@ mod tests {
         let query = Query::new(42, QueryType::Authenticate { rkey: rkey.clone() });
 
         // Write to Vec
-        let mut buffer = Vec::new();
+        let mut buffer = vec![];
         {
             let mut writer = BufWriter::new(&mut buffer);
             query.to_stream(&mut writer).await.unwrap();
@@ -146,7 +146,7 @@ mod tests {
         let query = Query::new(123, QueryType::ClientLs);
 
         // Write to Vec
-        let mut buffer = Vec::new();
+        let mut buffer = vec![];
         {
             let mut writer = BufWriter::new(&mut buffer);
             query.to_stream(&mut writer).await.unwrap();
@@ -170,7 +170,7 @@ mod tests {
         let query = Query::new(456, QueryType::ClientDisconnect { addr });
 
         // Write to Vec
-        let mut buffer = Vec::new();
+        let mut buffer = vec![];
         {
             let mut writer = BufWriter::new(&mut buffer);
             query.to_stream(&mut writer).await.unwrap();

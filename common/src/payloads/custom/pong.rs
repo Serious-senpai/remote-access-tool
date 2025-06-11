@@ -86,7 +86,7 @@ mod tests {
         let original_pong = Pong::new(123);
 
         // Write to Vec
-        let mut buffer = Vec::new();
+        let mut buffer = vec![];
         {
             let mut writer = BufWriter::new(&mut buffer);
             original_pong.to_stream(&mut writer).await.unwrap();
@@ -103,7 +103,7 @@ mod tests {
     #[tokio::test]
     async fn test_serialization_format() {
         let pong = Pong::new(42);
-        let mut buffer = Vec::new();
+        let mut buffer = vec![];
 
         {
             let mut writer = BufWriter::new(&mut buffer);

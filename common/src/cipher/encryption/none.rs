@@ -152,7 +152,7 @@ mod tests {
             _cipher: PhantomData,
         };
 
-        let payload = Vec::new();
+        let payload = vec![];
         let packet = Packet::<NoneCipher>::from_payload(&ctx, payload.clone())
             .await
             .unwrap();
@@ -225,7 +225,7 @@ mod tests {
             .unwrap();
 
         // Write packet to stream
-        let mut stream_data = Vec::new();
+        let mut stream_data = vec![];
         {
             let mut writer = BufWriter::new(&mut stream_data);
             packet.to_stream(&ctx, &mut writer).await.unwrap();
@@ -331,7 +331,7 @@ mod tests {
             b"first packet".to_vec(),
             b"second packet with more data".to_vec(),
             b"third".to_vec(),
-            Vec::new(), // empty payload
+            vec![], // empty payload
         ];
 
         for payload in payloads {

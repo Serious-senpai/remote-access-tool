@@ -59,7 +59,7 @@ mod tests {
         let original_ping = Ping::new(42);
 
         // Write to Vec
-        let mut buffer = Vec::new();
+        let mut buffer = vec![];
         {
             let mut writer = BufWriter::new(&mut buffer);
             original_ping.to_stream(&mut writer).await.unwrap();
@@ -76,7 +76,7 @@ mod tests {
     #[tokio::test]
     async fn test_ping_opcode() {
         let ping = Ping::new(123);
-        let mut buffer = Vec::new();
+        let mut buffer = vec![];
         {
             let mut writer = BufWriter::new(&mut buffer);
             ping.to_stream(&mut writer).await.unwrap();
@@ -91,7 +91,7 @@ mod tests {
     async fn test_ping_data_preservation() {
         for data_value in [0, 1, 127, 255] {
             let ping = Ping::new(data_value);
-            let mut buffer = Vec::new();
+            let mut buffer = vec![];
             {
                 let mut writer = BufWriter::new(&mut buffer);
                 ping.to_stream(&mut writer).await.unwrap();

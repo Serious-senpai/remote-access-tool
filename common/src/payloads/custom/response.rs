@@ -331,7 +331,7 @@ mod tests {
     use super::*;
 
     async fn test_round_trip(response: Response) {
-        let mut buffer = Vec::new();
+        let mut buffer = vec![];
         {
             let mut writer = BufWriter::new(&mut buffer);
             response.to_stream(&mut writer).await.unwrap();

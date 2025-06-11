@@ -61,7 +61,7 @@ mod tests {
         let ignore = Ignore::new(original_data.clone());
 
         // Write to Vec
-        let mut buffer = Vec::new();
+        let mut buffer = vec![];
         {
             let mut writer = BufWriter::new(&mut buffer);
             ignore.to_stream(&mut writer).await.unwrap();
@@ -81,7 +81,7 @@ mod tests {
         let empty_data = vec![];
         let ignore = Ignore::new(empty_data.clone());
 
-        let mut buffer = Vec::new();
+        let mut buffer = vec![];
         {
             let mut writer = BufWriter::new(&mut buffer);
             ignore.to_stream(&mut writer).await.unwrap();
@@ -99,7 +99,7 @@ mod tests {
         let large_data = vec![42; 1000];
         let ignore = Ignore::new(large_data.clone());
 
-        let mut buffer = Vec::new();
+        let mut buffer = vec![];
         {
             let mut writer = BufWriter::new(&mut buffer);
             ignore.to_stream(&mut writer).await.unwrap();

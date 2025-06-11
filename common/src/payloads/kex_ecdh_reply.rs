@@ -187,7 +187,7 @@ mod tests {
         };
 
         // Write to Vec
-        let mut buffer = Vec::new();
+        let mut buffer = vec![];
         {
             let mut writer = BufWriter::new(&mut buffer);
             original.to_stream(&mut writer).await.unwrap();

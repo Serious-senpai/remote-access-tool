@@ -79,7 +79,7 @@ mod tests {
         let cancel = Cancel::new(request_id, src);
 
         // Write to Vec
-        let mut buffer = Vec::new();
+        let mut buffer = vec![];
         {
             let mut writer = BufWriter::new(&mut buffer);
             cancel.to_stream(&mut writer).await.unwrap();
@@ -97,7 +97,7 @@ mod tests {
     #[tokio::test]
     async fn test_cancel_opcode() {
         let cancel = Cancel::new(0, SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0));
-        let mut buffer = Vec::new();
+        let mut buffer = vec![];
         {
             let mut writer = BufWriter::new(&mut buffer);
             cancel.to_stream(&mut writer).await.unwrap();

@@ -62,7 +62,7 @@ mod tests {
         let payload = KexEcdhInit::new(public_key.clone());
 
         // Write to Vec
-        let mut buffer = Vec::new();
+        let mut buffer = vec![];
         {
             let mut writer = BufWriter::new(&mut buffer);
             payload.to_stream(&mut writer).await.unwrap();
@@ -81,7 +81,7 @@ mod tests {
         let public_key = vec![];
         let payload = KexEcdhInit::new(public_key.clone());
 
-        let mut buffer = Vec::new();
+        let mut buffer = vec![];
         {
             let mut writer = BufWriter::new(&mut buffer);
             payload.to_stream(&mut writer).await.unwrap();
@@ -100,7 +100,7 @@ mod tests {
         let public_key = vec![0xFF; 1024];
         let payload = KexEcdhInit::new(public_key.clone());
 
-        let mut buffer = Vec::new();
+        let mut buffer = vec![];
         {
             let mut writer = BufWriter::new(&mut buffer);
             payload.to_stream(&mut writer).await.unwrap();
@@ -118,7 +118,7 @@ mod tests {
         let public_key = vec![1, 2, 3, 4];
         let payload = KexEcdhInit::new(public_key);
 
-        let mut buffer = Vec::new();
+        let mut buffer = vec![];
         {
             let mut writer = BufWriter::new(&mut buffer);
             payload.to_stream(&mut writer).await.unwrap();

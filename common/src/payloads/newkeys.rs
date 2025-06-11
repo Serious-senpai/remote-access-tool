@@ -42,7 +42,7 @@ mod tests {
     #[tokio::test]
     async fn test_newkeys_roundtrip() {
         let original = NewKeys;
-        let mut buffer = Vec::new();
+        let mut buffer = vec![];
 
         // Write to buffer
         {
@@ -81,7 +81,7 @@ mod tests {
     #[tokio::test]
     async fn test_newkeys_to_stream() {
         let newkeys = NewKeys;
-        let mut buffer = Vec::new();
+        let mut buffer = vec![];
 
         {
             let mut writer = BufWriter::new(&mut buffer);

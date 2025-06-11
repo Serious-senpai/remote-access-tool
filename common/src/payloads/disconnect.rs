@@ -88,7 +88,7 @@ mod tests {
         let original = Disconnect::new(42, "Connection lost", "en-US");
 
         // Write to Vec
-        let mut buffer = Vec::new();
+        let mut buffer = vec![];
         {
             let mut writer = BufWriter::new(&mut buffer);
             original.to_stream(&mut writer).await.unwrap();
@@ -108,7 +108,7 @@ mod tests {
     async fn test_disconnect_empty_strings() {
         let original = Disconnect::new(0, "", "");
 
-        let mut buffer = Vec::new();
+        let mut buffer = vec![];
         {
             let mut writer = BufWriter::new(&mut buffer);
             original.to_stream(&mut writer).await.unwrap();
@@ -131,7 +131,7 @@ mod tests {
             "en-US-x-test",
         );
 
-        let mut buffer = Vec::new();
+        let mut buffer = vec![];
         {
             let mut writer = BufWriter::new(&mut buffer);
             original.to_stream(&mut writer).await.unwrap();
@@ -150,7 +150,7 @@ mod tests {
     async fn test_disconnect_opcode_verification() {
         let disconnect = Disconnect::new(1, "test", "en");
 
-        let mut buffer = Vec::new();
+        let mut buffer = vec![];
         {
             let mut writer = BufWriter::new(&mut buffer);
             disconnect.to_stream(&mut writer).await.unwrap();
