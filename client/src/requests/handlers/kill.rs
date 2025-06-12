@@ -26,7 +26,7 @@ where
         matches: clap::ArgMatches,
     ) -> HandlerResult {
         let addr = *matches.get_one::<SocketAddr>("addr").unwrap();
-        let signal = matches.get_one::<String>("signal").unwrap().clone();
+        let signal = *matches.get_one::<i32>("signal").unwrap();
         let pid = *matches.get_one::<u64>("pid").unwrap();
 
         let mut receiver = broadcast.subscribe();

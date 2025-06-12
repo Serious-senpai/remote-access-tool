@@ -7,7 +7,6 @@ use std::{env, thread};
 
 use common::cipher::encryption::Cipher;
 use common::config;
-use common::errors::RuntimeError;
 use common::payloads::custom::cancel::Cancel;
 use common::payloads::custom::request::{Request, RequestType};
 use common::payloads::custom::response::{
@@ -16,13 +15,14 @@ use common::payloads::custom::response::{
 use common::payloads::PayloadFormat;
 use common::utils::{format_bytes, wait_for};
 use log::{error, info, warn};
-use sysinfo::{
-    Pid, ProcessRefreshKind, ProcessesToUpdate, Signal, System, MINIMUM_CPU_UPDATE_INTERVAL,
-};
+use nix::sys::signal;
+use nix::unistd;
+use sysinfo::{ProcessRefreshKind, ProcessesToUpdate, System, MINIMUM_CPU_UPDATE_INTERVAL};
 use tokio::fs::{self, read_dir};
 use tokio::io::AsyncReadExt;
+use tokio::signal::ctrl_c;
 use tokio::sync::Mutex;
-use tokio::{signal, task};
+use tokio::task;
 
 use crate::broadcast::BroadcastLayer;
 
@@ -241,26 +241,18 @@ async fn kill<C>(
     ptr: Arc<BroadcastLayer<C>>,
     payload: &Request,
     pid: u64,
-    signal: String,
+    signal: i32,
 ) -> Result<(), Box<dyn Error + Send + Sync>>
 where
     C: Cipher + 'static,
 {
-    info!("Killing process {} with signal {:?}", pid, signal);
-    let signal = match signal.to_uppercase().as_str() {
-        "TERM" => Ok(Signal::Term),
-        "KILL" => Ok(Signal::Kill),
-        s => Err(RuntimeError::new(format!("Unsupported signal {:?}", s))),
-    }?;
+    info!("Killing process {} with signal {}", pid, signal);
+    let s = signal::Signal::try_from(signal)?;
 
-    let system = System::new_all();
-    let process = system
-        .process(Pid::from(pid as usize))
-        .ok_or_else(|| RuntimeError::new("Process not found"))?;
-
-    process.kill_with(signal);
+    signal::kill(unistd::Pid::from_raw(pid as i32), Some(s))?;
     ptr.send(&Response::response_request(payload, ResponseType::Success))
         .await?;
+
     Ok(())
 }
 
@@ -396,7 +388,7 @@ where
     let _ptr = ptr.clone();
     let task = tokio::spawn(_poll_packets(_ptr));
 
-    let _ = signal::ctrl_c().await;
+    let _ = ctrl_c().await;
     info!("Received Ctrl+C, shutting down...");
 
     ptr.exit().await;

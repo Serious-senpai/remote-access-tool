@@ -17,7 +17,7 @@ pub enum RequestType {
     Download { path: PathBuf },
     DownloadAck { request_id: u32, received: u64 },
     Ps,
-    Kill { pid: u64, signal: String },
+    Kill { pid: u64, signal: i32 },
     Rm { path: PathBuf },
 }
 
@@ -85,7 +85,7 @@ impl PayloadFormat for Request {
             5 => RequestType::Ps,
             6 => {
                 let pid = stream.read_u64().await?;
-                let signal = String::from_utf8(read_string(stream).await?)?;
+                let signal = stream.read_i32().await?;
                 RequestType::Kill { pid, signal }
             }
             7 => {
@@ -138,7 +138,7 @@ impl PayloadFormat for Request {
             }
             RequestType::Kill { pid, signal } => {
                 stream.write_u64(*pid).await?;
-                write_string(stream, signal.as_bytes()).await?;
+                stream.write_i32(*signal).await?;
             }
             RequestType::Rm { path } => {
                 write_string(stream, path.to_str().ok_or(err)?.as_bytes()).await?;
@@ -286,7 +286,7 @@ mod tests {
             SocketAddr::new(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 100)), 8000),
             RequestType::Kill {
                 pid: 12345,
-                signal: "SIGTERM".to_string(),
+                signal: 9,
             },
         );
 
@@ -305,7 +305,7 @@ mod tests {
         assert_eq!(request.dest(), parsed.dest());
         if let RequestType::Kill { pid, signal } = parsed.rtype() {
             assert_eq!(*pid, 12345);
-            assert_eq!(signal, "SIGTERM");
+            assert_eq!(*signal, 9);
         } else {
             panic!("Expected Kill request type");
         }

@@ -3,7 +3,6 @@ use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use clap::builder::PossibleValue;
 use common::cipher::encryption::Cipher;
 
 use crate::broadcast::BroadcastLayer;
@@ -200,14 +199,11 @@ where
                     )
                     .arg(
                         clap::Arg::new("signal")
-                            .help("The signal to send to the process")
+                            .help("The signal to send to the process as an int32. See https://docs.rs/nix/0.30.1/nix/sys/signal/enum.Signal.html for details")
                             .short('s')
                             .long("signal")
-                            .default_value("TERM")
-                            .value_parser([
-                                PossibleValue::new("TERM").help("Send SIGTERM signal"),
-                                PossibleValue::new("KILL").help("Send SIGKILL signal"),
-                            ]),
+                            .default_value("9")
+                            .value_parser(clap::value_parser!(i32)),
                     ),
             )
             .subcommand(
