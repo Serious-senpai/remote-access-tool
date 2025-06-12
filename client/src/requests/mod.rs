@@ -2,6 +2,7 @@ pub mod command;
 pub mod handlers;
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use command::CommandBuilder;
 use common::cipher::encryption::Cipher;
@@ -10,6 +11,7 @@ use rustyline::DefaultEditor;
 use tokio::signal;
 use tokio::sync::Mutex;
 use tokio::task::spawn_blocking;
+use tokio::time::sleep;
 
 use crate::broadcast::BroadcastLayer;
 use crate::requests::handlers::SetTarget;
@@ -20,11 +22,11 @@ where
 {
     let mut request_id = 0;
     let mut target = None;
-    let command_builder = CommandBuilder::new();
 
     match DefaultEditor::new() {
         Ok(mut editor) => {
             loop {
+                let command_builder = CommandBuilder::new();
                 let prompt = format!("\n{}", command_builder.prompt(&target));
                 let task = spawn_blocking(move || {
                     let mut e = editor;
@@ -80,6 +82,12 @@ where
                 let abortable_cloned = abortable.clone();
 
                 let c_ptr = ptr.clone();
+                let task = tokio::spawn(async move {
+                    command_builder.execute(c_ptr, request_id, matches).await
+                });
+
+                let c_ptr = ptr.clone();
+                let task_abort = task.abort_handle();
                 let signal_handler = tokio::spawn(async move {
                     let _ = signal::ctrl_c().await;
                     let _ = abortable_cloned.lock().await;
@@ -89,21 +97,22 @@ where
                     {
                         eprintln!("Unable to create cancel request: {}", e);
                     }
+
+                    sleep(Duration::from_secs(5)).await;
+                    task_abort.abort();
                 });
 
-                let packed = command_builder
-                    .execute(ptr.clone(), request_id, matches)
-                    .await;
+                if let Ok(result) = task.await {
+                    let _ = abortable.lock().await;
+                    signal_handler.abort();
 
-                let _ = abortable.lock().await;
-                signal_handler.abort();
+                    if result.exit {
+                        break;
+                    }
 
-                if packed.exit {
-                    break;
-                }
-
-                if let SetTarget::Update(t) = packed.set_target {
-                    target = t;
+                    if let SetTarget::Update(t) = result.set_target {
+                        target = t;
+                    }
                 }
 
                 request_id = request_id.wrapping_add(1);

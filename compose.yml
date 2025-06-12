@@ -24,10 +24,12 @@ services:
       context: .
       dockerfile: client/ubuntu.Dockerfile
     command: rat-client ubuntu-server:22
-    container_name: ubuntu-client
+    # container_name: ubuntu-client
     depends_on:
       ubuntu-server:
         condition: service_healthy
+    deploy:
+      replicas: 3
     image: ubuntu-client
 
   centos-client:
@@ -35,8 +37,10 @@ services:
       context: .
       dockerfile: client/centos.Dockerfile
     command: rat-client ubuntu-server:22
-    container_name: centos-client
+    # container_name: centos-client
     depends_on:
       ubuntu-server:
         condition: service_healthy
+    deploy:
+      replicas: 3
     image: centos-client

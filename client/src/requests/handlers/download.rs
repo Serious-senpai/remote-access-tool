@@ -4,13 +4,12 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use common::cipher::encryption::Cipher;
-use common::config;
 use common::payloads::custom::request::{Request, RequestType};
 use common::payloads::custom::response::{Response, ResponseType};
 use common::payloads::PayloadFormat;
 use common::utils::{format_bytes, wait_for};
 use tokio::fs::File;
-use tokio::io::{stderr, AsyncWriteExt};
+use tokio::io::{stderr, stdin, AsyncBufReadExt, AsyncWriteExt, BufReader, BufWriter};
 use tokio::time::Instant;
 
 use crate::broadcast::BroadcastLayer;
@@ -34,13 +33,41 @@ where
         let src = matches.get_one::<PathBuf>("src").unwrap();
         let dest = matches.get_one::<PathBuf>("dest").unwrap();
 
-        let mut file = match File::create_new(dest).await {
+        let file = match File::create_new(dest).await {
             Ok(file) => file,
-            Err(e) => {
-                eprintln!("Failed to create file {}: {}", dest.to_string_lossy(), e);
-                return HandlerResult::noop();
+            Err(_) => {
+                let mut stdin = BufReader::new(stdin());
+                let mut stderr = stderr();
+
+                loop {
+                    eprint!(
+                        "{} already exists. Overwrite? (y/n) ",
+                        dest.to_string_lossy()
+                    );
+                    let _ = stderr.flush().await;
+
+                    let mut line = String::new();
+                    let _ = stdin.read_line(&mut line).await;
+                    line = line.trim().to_string();
+
+                    if line == "y" || line == "yes" {
+                        match File::create(dest).await {
+                            Ok(file) => break file,
+                            Err(e) => {
+                                eprintln!("Failed to create file: {}", e);
+                                return HandlerResult::noop();
+                            }
+                        }
+                    } else if line == "n" || line == "no" {
+                        eprintln!("Request cancelled.");
+                        return HandlerResult::noop();
+                    }
+                }
             }
         };
+
+        // Fast in-memory buffering
+        let mut file = BufWriter::new(file);
 
         let mut receiver = broadcast.subscribe();
         match broadcast
@@ -93,24 +120,6 @@ where
 
                             size += data.len();
                             chunks_count += 1;
-
-                            if chunks_count % (config::ACK_CHUNKS_COUNT / 2) == 0 {
-                                if let Err(e) = broadcast
-                                    .send(&Request::new(
-                                        !request_id,
-                                        local_addr,
-                                        addr,
-                                        RequestType::DownloadAck {
-                                            request_id,
-                                            received: size as u64,
-                                        },
-                                    ))
-                                    .await
-                                {
-                                    eprintln!("Failed to create ACK payload: {}", e);
-                                    break;
-                                }
-                            }
 
                             if chunks_count % 100 == 0 {
                                 let delta = size - benchmark_size;

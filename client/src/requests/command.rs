@@ -53,6 +53,8 @@ where
     }
 }
 
+/// Stateless command builder for the internal CLI.
+#[derive(Clone)]
 pub struct CommandBuilder<C>
 where
     C: Cipher + 'static,

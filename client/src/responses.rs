@@ -6,20 +6,19 @@ use std::time::SystemTime;
 use std::{env, thread};
 
 use common::cipher::encryption::Cipher;
-use common::config;
 use common::payloads::custom::cancel::Cancel;
 use common::payloads::custom::request::{Request, RequestType};
 use common::payloads::custom::response::{
     Entry, EntryMetadata, ProcessEntry, Response, ResponseType,
 };
 use common::payloads::PayloadFormat;
-use common::utils::{format_bytes, wait_for};
+use common::utils::format_bytes;
 use log::{error, info, warn};
 use nix::sys::signal;
 use nix::unistd;
 use sysinfo::{ProcessRefreshKind, ProcessesToUpdate, System, MINIMUM_CPU_UPDATE_INTERVAL};
-use tokio::fs::{self, read_dir};
-use tokio::io::AsyncReadExt;
+use tokio::fs::{read_dir, remove_dir, remove_file, symlink_metadata, File};
+use tokio::io::{AsyncReadExt, BufReader};
 use tokio::signal::ctrl_c;
 use tokio::sync::Mutex;
 use tokio::task;
@@ -126,10 +125,11 @@ where
     const CHUNK_SIZE: usize = 8192;
     info!("Uploading file {} to server", path.to_string_lossy());
 
-    let mut file = fs::File::open(&path).await?;
+    let file = File::open(&path).await?;
     let total = file.metadata().await?.len();
-    let mut sent = 0;
-    let mut received = 0;
+
+    // Fast in-memory buffering
+    let mut file = BufReader::new(file);
 
     loop {
         let mut buf = vec![0; CHUNK_SIZE];
@@ -158,29 +158,6 @@ where
                 ResponseType::DownloadChunk { total, data: buf },
             );
             ptr.send(&payload).await?;
-
-            sent += read_size;
-        }
-
-        if sent >= received + config::ACK_CHUNKS_COUNT * CHUNK_SIZE {
-            let mut receiver = ptr.subscribe();
-            let r_id = payload.request_id();
-            received = wait_for(&mut receiver, async |packet| {
-                if let Ok(request) = Request::from_packet(&packet).await {
-                    if let RequestType::DownloadAck {
-                        request_id,
-                        received,
-                    } = request.rtype()
-                    {
-                        if *request_id == r_id {
-                            return Some(*received);
-                        }
-                    }
-                }
-
-                None
-            })
-            .await as usize;
         }
     }
 
@@ -199,7 +176,7 @@ where
     let task = task::spawn_blocking(|| {
         let mut system = System::new_all();
 
-        thread::sleep(MINIMUM_CPU_UPDATE_INTERVAL);
+        thread::sleep(2 * MINIMUM_CPU_UPDATE_INTERVAL);
         system.refresh_processes_specifics(
             ProcessesToUpdate::All,
             true,
@@ -266,11 +243,11 @@ where
 {
     info!("Removing {}", path.to_string_lossy());
 
-    let metadata = fs::symlink_metadata(&path).await?;
+    let metadata = symlink_metadata(&path).await?;
     if metadata.is_dir() {
-        fs::remove_dir(&path).await?;
+        remove_dir(&path).await?;
     } else {
-        fs::remove_file(&path).await?;
+        remove_file(&path).await?;
     }
 
     let payload = Response::response_request(payload, ResponseType::Success);
@@ -333,9 +310,6 @@ where
                         }
                         RequestType::Download { path } => {
                             cmd_handler!(download, path.clone());
-                        }
-                        RequestType::DownloadAck { .. } => {
-                            // Used internally by download handler
                         }
                         RequestType::Ps => {
                             cmd_handler!(ps);

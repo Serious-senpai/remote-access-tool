@@ -15,7 +15,6 @@ pub enum RequestType {
     Ls { path: PathBuf },
     Cd { path: PathBuf },
     Download { path: PathBuf },
-    DownloadAck { request_id: u32, received: u64 },
     Ps,
     Kill { pid: u64, signal: i32 },
     Rm { path: PathBuf },
@@ -28,7 +27,6 @@ impl RequestType {
             Self::Ls { .. } => 1,
             Self::Cd { .. } => 2,
             Self::Download { .. } => 3,
-            Self::DownloadAck { .. } => 4,
             Self::Ps => 5,
             Self::Kill { .. } => 6,
             Self::Rm { .. } => 7,
@@ -73,14 +71,6 @@ impl PayloadFormat for Request {
             3 => {
                 let path = PathBuf::from(String::from_utf8(read_string(stream).await?)?);
                 RequestType::Download { path }
-            }
-            4 => {
-                let request_id = stream.read_u32().await?;
-                let received = stream.read_u64().await?;
-                RequestType::DownloadAck {
-                    request_id,
-                    received,
-                }
             }
             5 => RequestType::Ps,
             6 => {
@@ -128,13 +118,6 @@ impl PayloadFormat for Request {
             }
             RequestType::Download { path } => {
                 write_string(stream, path.to_str().ok_or(err)?.as_bytes()).await?;
-            }
-            RequestType::DownloadAck {
-                request_id,
-                received,
-            } => {
-                stream.write_u32(*request_id).await?;
-                stream.write_u64(*received).await?;
             }
             RequestType::Kill { pid, signal } => {
                 stream.write_u64(*pid).await?;
@@ -238,43 +221,6 @@ mod tests {
             assert_eq!(path, &PathBuf::from("/home/user"));
         } else {
             panic!("Expected Ls request type");
-        }
-    }
-
-    #[tokio::test]
-    async fn test_request_download_ack_roundtrip() {
-        let request = Request::new(
-            456,
-            SocketAddr::new(IpAddr::V4(Ipv4Addr::new(192, 168, 0, 1)), 5000),
-            SocketAddr::new(IpAddr::V4(Ipv4Addr::new(10, 10, 10, 10)), 6000),
-            RequestType::DownloadAck {
-                request_id: 789,
-                received: 1024,
-            },
-        );
-
-        let mut buffer = vec![];
-        {
-            let mut writer = BufWriter::new(&mut buffer);
-            request.to_stream(&mut writer).await.unwrap();
-            writer.flush().await.unwrap();
-        }
-
-        let mut reader = BufReader::new(buffer.as_slice());
-        let parsed = Request::from_stream(&mut reader).await.unwrap();
-
-        assert_eq!(request.request_id(), parsed.request_id());
-        assert_eq!(request.src(), parsed.src());
-        assert_eq!(request.dest(), parsed.dest());
-        if let RequestType::DownloadAck {
-            request_id,
-            received,
-        } = parsed.rtype()
-        {
-            assert_eq!(*request_id, 789);
-            assert_eq!(*received, 1024);
-        } else {
-            panic!("Expected DownloadAck request type");
         }
     }
 
