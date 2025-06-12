@@ -143,11 +143,7 @@ where
     let mut file = File::open(&path).await?;
     let total = file.metadata().await?.len();
 
-    let mut until = if let Some(dt) = time_per_sleep {
-        Some(Instant::now() + dt)
-    } else {
-        None
-    };
+    let mut until = time_per_sleep.map(|dt| Instant::now() + dt);
     let mut buf = vec![0; CHUNK_SIZE];
     for counter in 1.. {
         buf.resize(CHUNK_SIZE, 0);
