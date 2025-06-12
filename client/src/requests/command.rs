@@ -172,6 +172,15 @@ where
                     .about("Download a file from the client")
                     .arg(addr())
                     .arg(
+                        clap::Arg::new("max")
+                            .help("Maximum download speed (KiB/s). Use 0 for unlimited.")
+                            .short('m')
+                            .long("max")
+                            .default_value("2048")
+                            .required(false)
+                            .value_parser(clap::value_parser!(u64)),
+                    )
+                    .arg(
                         clap::Arg::new("src")
                             .help("The path to the file on the client side")
                             .required(true)

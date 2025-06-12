@@ -14,7 +14,7 @@ pub enum RequestType {
     Pwd,
     Ls { path: PathBuf },
     Cd { path: PathBuf },
-    Download { path: PathBuf },
+    Download { max: u64, path: PathBuf },
     Ps,
     Kill { pid: u64, signal: i32 },
     Rm { path: PathBuf },
@@ -69,8 +69,9 @@ impl PayloadFormat for Request {
                 RequestType::Cd { path }
             }
             3 => {
+                let max = stream.read_u64().await?;
                 let path = PathBuf::from(String::from_utf8(read_string(stream).await?)?);
-                RequestType::Download { path }
+                RequestType::Download { max, path }
             }
             5 => RequestType::Ps,
             6 => {
@@ -116,7 +117,8 @@ impl PayloadFormat for Request {
             RequestType::Cd { path } => {
                 write_string(stream, path.to_str().ok_or(err)?.as_bytes()).await?;
             }
-            RequestType::Download { path } => {
+            RequestType::Download { max, path } => {
+                stream.write_u64(*max).await?;
                 write_string(stream, path.to_str().ok_or(err)?.as_bytes()).await?;
             }
             RequestType::Kill { pid, signal } => {
@@ -157,6 +159,10 @@ impl Request {
 
     pub fn rtype(&self) -> &RequestType {
         &self._rtype
+    }
+
+    pub fn into_rtype(self) -> RequestType {
+        self._rtype
     }
 }
 
@@ -269,6 +275,7 @@ mod tests {
                 path: PathBuf::from("/var/log"),
             },
             RequestType::Download {
+                max: 1024,
                 path: PathBuf::from("/etc/passwd"),
             },
             RequestType::Rm {

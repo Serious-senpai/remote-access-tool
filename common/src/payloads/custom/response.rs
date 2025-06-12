@@ -322,6 +322,10 @@ impl Response {
     pub fn rtype(&self) -> &ResponseType {
         &self._rtype
     }
+
+    pub fn into_rtype(self) -> ResponseType {
+        self._rtype
+    }
 }
 
 #[cfg(test)]

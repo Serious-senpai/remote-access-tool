@@ -30,6 +30,7 @@ where
         matches: clap::ArgMatches,
     ) -> HandlerResult {
         let addr = *matches.get_one::<SocketAddr>("addr").unwrap();
+        let max = *matches.get_one::<u64>("max").unwrap();
         let src = matches.get_one::<PathBuf>("src").unwrap();
         let dest = matches.get_one::<PathBuf>("dest").unwrap();
 
@@ -75,13 +76,15 @@ where
                 request_id,
                 local_addr,
                 addr,
-                RequestType::Download { path: src.clone() },
+                RequestType::Download {
+                    max,
+                    path: src.clone(),
+                },
             ))
             .await
         {
             Ok(_) => {
                 let mut size = 0;
-                let mut chunks_count = 0;
 
                 let mut benchmark_size = size;
                 let mut benchmark_time = Instant::now();
@@ -119,12 +122,11 @@ where
                             }
 
                             size += data.len();
-                            chunks_count += 1;
 
-                            if chunks_count % 100 == 0 {
+                            let elapsed = benchmark_time.elapsed();
+                            if elapsed.as_secs_f64() > 1.0 {
                                 let delta = size - benchmark_size;
                                 benchmark_size = size;
-                                let elapsed = benchmark_time.elapsed();
                                 benchmark_time = Instant::now();
 
                                 let speed = delta as f64 / elapsed.as_secs_f64();

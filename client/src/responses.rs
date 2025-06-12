@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::error::Error;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime};
 use std::{env, thread};
 
 use common::cipher::encryption::Cipher;
@@ -18,10 +18,11 @@ use nix::sys::signal;
 use nix::unistd;
 use sysinfo::{ProcessRefreshKind, ProcessesToUpdate, System, MINIMUM_CPU_UPDATE_INTERVAL};
 use tokio::fs::{read_dir, remove_dir, remove_file, symlink_metadata, File};
-use tokio::io::{AsyncReadExt, BufReader};
+use tokio::io::AsyncReadExt;
 use tokio::signal::ctrl_c;
 use tokio::sync::Mutex;
 use tokio::task;
+use tokio::time::{sleep_until, Instant};
 
 use crate::broadcast::BroadcastLayer;
 
@@ -117,22 +118,35 @@ where
 async fn download<C>(
     ptr: Arc<BroadcastLayer<C>>,
     payload: &Request,
+    max: u64,
     path: PathBuf,
 ) -> Result<(), Box<dyn Error + Send + Sync>>
 where
     C: Cipher + 'static,
 {
-    const CHUNK_SIZE: usize = 8192;
+    const CHUNK_SIZE: usize = 128 << 10;
+
+    const CHUNKS_BEFORE_SLEEP: u32 = 16;
+    assert_eq!(CHUNKS_BEFORE_SLEEP.count_ones(), 1);
+    const DIVISIBLE_MASK: u32 = CHUNKS_BEFORE_SLEEP - 1;
+
+    let time_per_sleep: Duration = Duration::from_nanos(
+        u64::from(CHUNKS_BEFORE_SLEEP) * 1_000_000_000 * CHUNK_SIZE as u64 / (max << 10),
+    );
+
     info!("Uploading file {} to server", path.to_string_lossy());
 
-    let file = File::open(&path).await?;
+    let mut file = File::open(&path).await?;
     let total = file.metadata().await?.len();
 
-    // Fast in-memory buffering
-    let mut file = BufReader::new(file);
-
-    loop {
-        let mut buf = vec![0; CHUNK_SIZE];
+    let mut until = Instant::now() + time_per_sleep;
+    let mut buf = vec![0; CHUNK_SIZE];
+    for counter in 1.. {
+        buf.resize(CHUNK_SIZE, 0);
+        if (counter & DIVISIBLE_MASK) == 0 {
+            sleep_until(until).await;
+            until += time_per_sleep;
+        }
 
         let read_size = file.read(&mut buf).await?;
         if read_size == 0 {
@@ -158,6 +172,12 @@ where
                 ResponseType::DownloadChunk { total, data: buf },
             );
             ptr.send(&payload).await?;
+
+            buf = if let ResponseType::DownloadChunk { data, .. } = payload.into_rtype() {
+                data
+            } else {
+                panic!("This should never happen");
+            };
         }
     }
 
@@ -308,8 +328,8 @@ where
                         RequestType::Cd { path } => {
                             cmd_handler!(cd, path.clone());
                         }
-                        RequestType::Download { path } => {
-                            cmd_handler!(download, path.clone());
+                        RequestType::Download { max, path } => {
+                            cmd_handler!(download, max, path.clone());
                         }
                         RequestType::Ps => {
                             cmd_handler!(ps);
