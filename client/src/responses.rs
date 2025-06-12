@@ -130,22 +130,33 @@ where
     assert_eq!(CHUNKS_BEFORE_SLEEP.count_ones(), 1);
     const DIVISIBLE_MASK: u32 = CHUNKS_BEFORE_SLEEP - 1;
 
-    let time_per_sleep: Duration = Duration::from_nanos(
-        u64::from(CHUNKS_BEFORE_SLEEP) * 1_000_000_000 * CHUNK_SIZE as u64 / (max << 10),
-    );
+    let time_per_sleep: Option<Duration> = if max == 0 {
+        None
+    } else {
+        Some(Duration::from_nanos(
+            u64::from(CHUNKS_BEFORE_SLEEP) * 1_000_000_000 * CHUNK_SIZE as u64 / (max << 10),
+        ))
+    };
 
     info!("Uploading file {} to server", path.to_string_lossy());
 
     let mut file = File::open(&path).await?;
     let total = file.metadata().await?.len();
 
-    let mut until = Instant::now() + time_per_sleep;
+    let mut until = if let Some(dt) = time_per_sleep {
+        Some(Instant::now() + dt)
+    } else {
+        None
+    };
     let mut buf = vec![0; CHUNK_SIZE];
     for counter in 1.. {
         buf.resize(CHUNK_SIZE, 0);
-        if (counter & DIVISIBLE_MASK) == 0 {
-            sleep_until(until).await;
-            until += time_per_sleep;
+
+        if let Some(deadline) = until {
+            if (counter & DIVISIBLE_MASK) == 0 {
+                sleep_until(deadline).await;
+                until = Some(deadline + time_per_sleep.unwrap());
+            }
         }
 
         let read_size = file.read(&mut buf).await?;
