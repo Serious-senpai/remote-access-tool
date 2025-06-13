@@ -19,7 +19,7 @@ jobs:
       - name: Setup Rust nightly
         run: rustup toolchain install nightly
 
-      - name: Run clippy
+      - name: Run rustfmt via cargo fmt
         run: cargo +nightly fmt -- --check
 
   clippy:

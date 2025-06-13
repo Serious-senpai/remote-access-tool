@@ -13,7 +13,7 @@ Running with [Docker Compose](https://docs.docker.com/compose/) is as easy as:
 $ docker compose up -d
 ```
 
-This will create 3 containers: `ubuntu-server`, `ubuntu-client` and `centos-client`. You can `exec` into the server to start an interactive session:
+This will create 7 containers from 3 images: `ubuntu-server` (1 container), `ubuntu-client` (3 replica containers) and `centos-client` (3 replica containers). You can `exec` into the server to start an interactive session:
 ```bash
 $ docker exec -it ubuntu-server bash
 root@ubuntu-server:/# rat-client localhost:22 --admin /host
