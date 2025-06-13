@@ -14,7 +14,10 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Setup Rust
-        run: curl --proto '=https' --tlsv1.2 https://sh.rustup.rs -sSf | sh -s -- toolchain install nightly
+        run: curl --proto '=https' --tlsv1.2 https://sh.rustup.rs -sSf | sh -s -- --default-toolchain=1.87 -y
+
+      - name: Setup Rust nightly
+        run: rustup toolchain install nightly
 
       - name: Run clippy
         run: cargo +nightly fmt -- --check
