@@ -1,6 +1,3 @@
-mod cli;
-mod layers;
-
 use std::error::Error;
 use std::fs::File;
 use std::sync::Arc;
@@ -11,7 +8,8 @@ use common::cipher::hostkey::read_host_key;
 use common::cipher::hostkey::rsa_sha2_512::RsaSha512;
 use common::cipher::kex::curve25519_sha256::Curve25519Sha256;
 use env_logger::Target;
-use layers::aggregation::AggregationLayer;
+use rat_server::cli;
+use rat_server::layers::aggregation::AggregationLayer;
 use tokio::net::TcpListener;
 
 #[tokio::main]

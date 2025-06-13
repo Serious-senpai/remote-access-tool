@@ -409,8 +409,8 @@ mod tests {
 
         assert_eq!(kexinit.kex_algorithms().len(), 2);
         assert_eq!(kexinit.server_host_key_algorithms().len(), 2);
-        assert_eq!(kexinit.first_kex_packet_follows(), true);
-        assert_eq!(parsed_kexinit.first_kex_packet_follows(), true);
+        assert!(kexinit.first_kex_packet_follows());
+        assert!(parsed_kexinit.first_kex_packet_follows());
     }
 
     #[tokio::test]

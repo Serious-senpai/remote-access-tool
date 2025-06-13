@@ -64,6 +64,15 @@ where
     _root: Arc<CommandTree<C>>,
 }
 
+impl<C> Default for CommandBuilder<C>
+where
+    C: Cipher + 'static,
+{
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<C> CommandBuilder<C>
 where
     C: Cipher + 'static,

@@ -1,13 +1,6 @@
-mod broadcast;
-mod cli;
-mod kex;
-mod requests;
-mod responses;
-
 use std::error::Error;
 use std::sync::Arc;
 
-use broadcast::BroadcastLayer;
 use clap::Parser;
 use common::cipher::encryption::chacha20_poly1305::ChaCha20Poly1305;
 use common::cipher::hostkey::read_host_key;
@@ -18,6 +11,8 @@ use common::payloads::custom::response::{Response, ResponseType};
 use common::payloads::PayloadFormat;
 use common::utils::wait_for;
 use log::{debug, error, info};
+use rat_client::broadcast::BroadcastLayer;
+use rat_client::{cli, kex, requests, responses};
 use tokio::net::TcpStream;
 
 #[tokio::main]

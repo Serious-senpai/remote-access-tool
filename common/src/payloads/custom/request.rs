@@ -342,7 +342,7 @@ mod tests {
             paths: deser_paths,
         } = deserialized.rtype()
         {
-            assert_eq!(*parent, true);
+            assert!(*parent);
             assert_eq!(deser_paths, &paths);
         } else {
             panic!("Expected RequestType::Mkdir");
@@ -412,7 +412,7 @@ mod tests {
             paths: deser_paths,
         } = deserialized.rtype()
         {
-            assert_eq!(*recursive, false);
+            assert!(!(*recursive));
             assert_eq!(deser_paths, &paths);
         } else {
             panic!("Expected RequestType::Rm");

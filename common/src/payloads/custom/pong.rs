@@ -118,7 +118,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_invalid_opcode() {
-        let buffer = vec![99, 42]; // Wrong opcode
+        let buffer = [99, 42]; // Wrong opcode
         let mut reader = BufReader::new(&buffer[..]);
 
         let result = Pong::from_stream(&mut reader).await;

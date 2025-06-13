@@ -62,7 +62,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_newkeys_from_stream_correct_opcode() {
-        let buffer = vec![NewKeys::OPCODE];
+        let buffer = [NewKeys::OPCODE];
         let mut reader = BufReader::new(&buffer[..]);
 
         let result = NewKeys::from_stream(&mut reader).await;
@@ -71,7 +71,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_newkeys_from_stream_wrong_opcode() {
-        let buffer = vec![255]; // Wrong opcode
+        let buffer = [255]; // Wrong opcode
         let mut reader = BufReader::new(&buffer[..]);
 
         let result = NewKeys::from_stream(&mut reader).await;
