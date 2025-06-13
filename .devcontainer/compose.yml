@@ -1,5 +1,5 @@
 # Reference: https://docs.docker.com/reference/compose-file/
-name: remote-access-tool
+name: remote-access-tool-dev
 
 services:
   ubuntu:

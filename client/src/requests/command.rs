@@ -7,6 +7,7 @@ use common::cipher::encryption::Cipher;
 
 use crate::broadcast::BroadcastLayer;
 use crate::requests::handlers::cd::CdHandler;
+use crate::requests::handlers::clear::ClearHandler;
 use crate::requests::handlers::client::disconnect::ClientDisconnectHandler;
 use crate::requests::handlers::client::ls::ClientLsHandler;
 use crate::requests::handlers::download::DownloadHandler;
@@ -78,7 +79,9 @@ where
         );
         root.add_child("client", client);
 
+        // NOTE: Sort these according to lexicography order (just to keep source code consistent)
         root.add_child("cd", CommandTree::with_handler(CdHandler));
+        root.add_child("clear", CommandTree::with_handler(ClearHandler));
         root.add_child("download", CommandTree::with_handler(DownloadHandler));
         root.add_child("exit", CommandTree::with_handler(ExitHandler));
         root.add_child("ls", CommandTree::with_handler(LsHandler));
@@ -115,6 +118,7 @@ where
             }
         };
 
+        // NOTE: Sort the subcommands according to their order in the help menu
         clap::Command::new(self.prompt(target))
             .disable_help_flag(true)
             .about(clap::crate_description!())
@@ -131,6 +135,10 @@ where
                             .about("Disconnect a client")
                             .arg(addr()),
                     ),
+            )
+            .subcommand(
+                clap::Command::new("clear")
+                    .about("Clear the screen")
             )
             .subcommand(
                 clap::Command::new("cd")

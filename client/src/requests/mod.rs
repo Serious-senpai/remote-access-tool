@@ -1,6 +1,7 @@
 pub mod command;
 pub mod handlers;
 
+use std::io::{stdout, Write};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -108,6 +109,17 @@ where
 
                     if result.exit {
                         break;
+                    }
+
+                    if result.clear {
+                        // Use synchronous API
+                        let mut stdout = stdout();
+
+                        // \x1b[H moves cursor to top left of screen (this does not scroll up)
+                        // \x1b[J (or \x1b[0J) erases from the cursor to the end of screen
+                        // \x1b[3J clears the entire screen, including scrollback buffer (but may not always be compatible)
+                        let _ = stdout.write(b"\x1b[H\x1b[J\x1b[3J");
+                        let _ = stdout.flush();
                     }
 
                     if let SetTarget::Update(t) = result.set_target {

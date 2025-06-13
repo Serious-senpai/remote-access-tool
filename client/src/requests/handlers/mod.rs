@@ -1,4 +1,5 @@
 pub mod cd;
+pub mod clear;
 pub mod client;
 pub mod download;
 pub mod exit;
@@ -20,6 +21,7 @@ use crate::BroadcastLayer;
 
 pub struct HandlerResult {
     pub exit: bool,
+    pub clear: bool,
     pub set_target: SetTarget,
 }
 
@@ -27,6 +29,7 @@ impl HandlerResult {
     pub fn noop() -> Self {
         Self {
             exit: false,
+            clear: false,
             set_target: SetTarget::Unchanged,
         }
     }
@@ -34,6 +37,15 @@ impl HandlerResult {
     pub fn exit() -> Self {
         Self {
             exit: true,
+            clear: false,
+            set_target: SetTarget::Unchanged,
+        }
+    }
+
+    pub fn clear() -> Self {
+        Self {
+            exit: false,
+            clear: true,
             set_target: SetTarget::Unchanged,
         }
     }
@@ -41,6 +53,7 @@ impl HandlerResult {
     pub fn update_target(addr: Option<SocketAddr>) -> Self {
         Self {
             exit: false,
+            clear: false,
             set_target: SetTarget::Update(addr),
         }
     }
