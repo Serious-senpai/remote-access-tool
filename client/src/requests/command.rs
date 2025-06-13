@@ -13,6 +13,7 @@ use crate::requests::handlers::download::DownloadHandler;
 use crate::requests::handlers::exit::ExitHandler;
 use crate::requests::handlers::kill::KillHandler;
 use crate::requests::handlers::ls::LsHandler;
+use crate::requests::handlers::mkdir::MkdirHandler;
 use crate::requests::handlers::ps::PsHandler;
 use crate::requests::handlers::pwd::PwdHandler;
 use crate::requests::handlers::rm::RmHandler;
@@ -81,6 +82,7 @@ where
         root.add_child("download", CommandTree::with_handler(DownloadHandler));
         root.add_child("exit", CommandTree::with_handler(ExitHandler));
         root.add_child("ls", CommandTree::with_handler(LsHandler));
+        root.add_child("mkdir", CommandTree::with_handler(MkdirHandler));
         root.add_child("ps", CommandTree::with_handler(PsHandler));
         root.add_child("kill", CommandTree::with_handler(KillHandler));
         root.add_child("rm", CommandTree::with_handler(RmHandler));
@@ -118,9 +120,11 @@ where
             .about(clap::crate_description!())
             .long_about(clap::crate_description!())
             .no_binary_name(true)
+            .subcommand_required(true)
             .subcommand(
                 clap::Command::new("client")
                     .about("Manage connected clients")
+                    .subcommand_required(true)
                     .subcommand(clap::Command::new("ls").about("List connected clients"))
                     .subcommand(
                         clap::Command::new("disconnect")
@@ -158,11 +162,40 @@ where
             )
             .subcommand(
                 clap::Command::new("rm")
-                    .about("Remove a directory or file on the client side")
+                    .about("Remove directories or files on the client side")
                     .arg(addr())
                     .arg(
-                        clap::Arg::new("path")
-                            .help("The path to the file or directory to remove")
+                        clap::Arg::new("recursive")
+                        .action(clap::ArgAction::SetTrue)
+                            .help("Whether to remove directories recursively")
+                            .short('r')
+                            .long("recursive")
+                            .required(false)
+                    )
+                    .arg(
+                        clap::Arg::new("paths")
+                            .action(clap::ArgAction::Append)
+                            .help("The path to the directories or files to remove")
+                            .required(true)
+                            .value_parser(clap::value_parser!(PathBuf)),
+                    ),
+            )
+            .subcommand(
+                clap::Command::new("mkdir")
+                    .about("Create new directories if they do not exist on the client side")
+                    .arg(addr())
+                    .arg(
+                        clap::Arg::new("parent")
+                            .action(clap::ArgAction::SetTrue)
+                            .help("Whether to create parent directories if they do not exist")
+                            .short('p')
+                            .long("parent")
+                            .required(false)
+                    )
+                    .arg(
+                        clap::Arg::new("paths")
+                            .action(clap::ArgAction::Append)
+                            .help("The path to the new directories to create")
                             .required(true)
                             .value_parser(clap::value_parser!(PathBuf)),
                     ),

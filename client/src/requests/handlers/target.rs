@@ -4,8 +4,8 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use common::cipher::encryption::Cipher;
 
-use crate::requests::handlers::{Handler, HandlerResult};
 use crate::broadcast::BroadcastLayer;
+use crate::requests::handlers::{Handler, HandlerResult};
 
 pub struct TargetHandler;
 

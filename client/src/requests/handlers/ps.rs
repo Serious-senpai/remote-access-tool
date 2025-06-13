@@ -8,8 +8,8 @@ use common::payloads::custom::response::{Response, ResponseType};
 use common::payloads::PayloadFormat;
 use common::utils::{format_bytes, format_time, strip, wait_for, ConsoleTable};
 
-use crate::requests::handlers::{Handler, HandlerResult};
 use crate::broadcast::BroadcastLayer;
+use crate::requests::handlers::{Handler, HandlerResult};
 
 pub struct PsHandler;
 

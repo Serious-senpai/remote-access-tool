@@ -6,6 +6,7 @@ use std::time::{Duration, SystemTime};
 use std::{env, thread};
 
 use common::cipher::encryption::Cipher;
+use common::errors::RuntimeError;
 use common::payloads::custom::cancel::Cancel;
 use common::payloads::custom::request::{Request, RequestType};
 use common::payloads::custom::response::{
@@ -17,7 +18,10 @@ use log::{error, info, warn};
 use nix::sys::signal;
 use nix::unistd;
 use sysinfo::{ProcessRefreshKind, ProcessesToUpdate, System, MINIMUM_CPU_UPDATE_INTERVAL};
-use tokio::fs::{read_dir, remove_dir, remove_file, symlink_metadata, File};
+use tokio::fs::{
+    create_dir, create_dir_all, read_dir, remove_dir, remove_dir_all, remove_file,
+    symlink_metadata, File,
+};
 use tokio::io::AsyncReadExt;
 use tokio::signal::ctrl_c;
 use tokio::sync::Mutex;
@@ -49,7 +53,7 @@ where
 async fn ls<C>(
     ptr: Arc<BroadcastLayer<C>>,
     payload: &Request,
-    path: PathBuf,
+    path: &PathBuf,
 ) -> Result<(), Box<dyn Error + Send + Sync>>
 where
     C: Cipher + 'static,
@@ -100,7 +104,7 @@ where
 async fn cd<C>(
     ptr: Arc<BroadcastLayer<C>>,
     payload: &Request,
-    path: PathBuf,
+    path: &PathBuf,
 ) -> Result<(), Box<dyn Error + Send + Sync>>
 where
     C: Cipher + 'static,
@@ -119,7 +123,7 @@ async fn download<C>(
     ptr: Arc<BroadcastLayer<C>>,
     payload: &Request,
     max: u64,
-    path: PathBuf,
+    path: &PathBuf,
 ) -> Result<(), Box<dyn Error + Send + Sync>>
 where
     C: Cipher + 'static,
@@ -188,6 +192,43 @@ where
         }
     }
 
+    Ok(())
+}
+
+async fn mkdir<C>(
+    ptr: Arc<BroadcastLayer<C>>,
+    payload: &Request,
+    parent: bool,
+    paths: &[PathBuf],
+) -> Result<(), Box<dyn Error + Send + Sync>>
+where
+    C: Cipher + 'static,
+{
+    let mut errors = vec![];
+    for path in paths {
+        if let Err(e) = (async {
+            info!("Creating directory {}", path.to_string_lossy());
+
+            if parent {
+                create_dir_all(path).await?;
+            } else {
+                create_dir(path).await?;
+            }
+
+            Ok::<(), Box<dyn Error + Send + Sync>>(())
+        })
+        .await
+        {
+            errors.push(e);
+        }
+    }
+
+    if !errors.is_empty() {
+        Err(RuntimeError::from_errors(&errors))?
+    }
+
+    let payload = Response::response_request(payload, ResponseType::Success);
+    ptr.send(&payload).await?;
     Ok(())
 }
 
@@ -263,18 +304,42 @@ where
 async fn rm<C>(
     ptr: Arc<BroadcastLayer<C>>,
     payload: &Request,
-    path: PathBuf,
+    recursive: bool,
+    paths: &[PathBuf],
 ) -> Result<(), Box<dyn Error + Send + Sync>>
 where
     C: Cipher + 'static,
 {
-    info!("Removing {}", path.to_string_lossy());
+    let mut errors = vec![];
+    for path in paths {
+        info!(
+            "Removing {} (recursive={})",
+            path.to_string_lossy(),
+            recursive
+        );
 
-    let metadata = symlink_metadata(&path).await?;
-    if metadata.is_dir() {
-        remove_dir(&path).await?;
-    } else {
-        remove_file(&path).await?;
+        if let Err(e) = (async {
+            let metadata = symlink_metadata(&path).await?;
+            if metadata.is_dir() {
+                if recursive {
+                    remove_dir_all(&path).await?;
+                } else {
+                    remove_dir(&path).await?;
+                }
+            } else {
+                remove_file(&path).await?;
+            }
+
+            Ok::<(), Box<dyn Error + Send + Sync>>(())
+        })
+        .await
+        {
+            errors.push(e);
+        }
+    }
+
+    if !errors.is_empty() {
+        Err(RuntimeError::from_errors(&errors))?
     }
 
     let payload = Response::response_request(payload, ResponseType::Success);
@@ -309,8 +374,7 @@ where
 
                             let task = tokio::spawn(async move {
                                 if let Err(e) = $handler(c_ptr.clone(), &request $(, $args)*).await {
-                                    let message =
-                                        format!("Error handling request {}: {}", request_id, e);
+                                    let message = format!("{}", e);
                                     error!("{}", message);
 
                                     let payload = Response::response_request(
@@ -330,13 +394,16 @@ where
                             cmd_handler!(pwd);
                         }
                         RequestType::Ls { path } => {
-                            cmd_handler!(ls, path.clone());
+                            cmd_handler!(ls, &path);
                         }
                         RequestType::Cd { path } => {
-                            cmd_handler!(cd, path.clone());
+                            cmd_handler!(cd, &path);
                         }
                         RequestType::Download { max, path } => {
-                            cmd_handler!(download, max, path.clone());
+                            cmd_handler!(download, max, &path);
+                        }
+                        RequestType::Mkdir{ parent, paths }=>{
+                            cmd_handler!(mkdir, parent, &paths);
                         }
                         RequestType::Ps => {
                             cmd_handler!(ps);
@@ -344,8 +411,8 @@ where
                         RequestType::Kill { pid, signal } => {
                             cmd_handler!(kill, pid, signal);
                         }
-                        RequestType::Rm { path } => {
-                            cmd_handler!(rm, path.clone());
+                        RequestType::Rm { recursive, paths } => {
+                            cmd_handler!(rm, recursive, &paths);
                         }
                     }
                 } else if let Ok(cancel) = Cancel::from_packet(&packet).await {

@@ -27,7 +27,13 @@ where
         matches: clap::ArgMatches,
     ) -> HandlerResult {
         let addr = *matches.get_one::<SocketAddr>("addr").unwrap();
-        let path = matches.get_one::<PathBuf>("path").unwrap();
+        let recursive = *matches.get_one::<bool>("recursive").unwrap();
+        let paths = matches.get_many::<PathBuf>("paths").unwrap();
+
+        let mut p = vec![];
+        for path in paths {
+            p.push(path.clone());
+        }
 
         let mut receiver = broadcast.subscribe();
         match broadcast
@@ -35,7 +41,10 @@ where
                 request_id,
                 local_addr,
                 addr,
-                RequestType::Rm { path: path.clone() },
+                RequestType::Rm {
+                    recursive,
+                    paths: p,
+                },
             ))
             .await
         {

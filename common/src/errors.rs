@@ -1,7 +1,7 @@
 use std::error::Error;
 use std::fmt;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct RuntimeError<T>
 where
     T: fmt::Display,
@@ -25,6 +25,18 @@ where
 {
     pub fn new(message: T) -> Self {
         Self { message }
+    }
+}
+
+impl RuntimeError<String> {
+    pub fn from_errors(errors: &[Box<dyn Error + Send + Sync>]) -> Self {
+        let message = errors
+            .iter()
+            .map(|e| e.to_string())
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        Self::new(message)
     }
 }
 

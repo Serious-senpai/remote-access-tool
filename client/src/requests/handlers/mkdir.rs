@@ -1,4 +1,5 @@
 use std::net::SocketAddr;
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -11,10 +12,10 @@ use common::utils::wait_for;
 use crate::broadcast::BroadcastLayer;
 use crate::requests::handlers::{Handler, HandlerResult};
 
-pub struct PwdHandler;
+pub struct MkdirHandler;
 
 #[async_trait]
-impl<C> Handler<C> for PwdHandler
+impl<C> Handler<C> for MkdirHandler
 where
     C: Cipher + 'static,
 {
@@ -26,6 +27,13 @@ where
         matches: clap::ArgMatches,
     ) -> HandlerResult {
         let addr = *matches.get_one::<SocketAddr>("addr").unwrap();
+        let parent = *matches.get_one::<bool>("parent").unwrap();
+        let paths = matches.get_many::<PathBuf>("paths").unwrap();
+
+        let mut p = vec![];
+        for path in paths {
+            p.push(path.clone());
+        }
 
         let mut receiver = broadcast.subscribe();
         match broadcast
@@ -33,7 +41,7 @@ where
                 request_id,
                 local_addr,
                 addr,
-                RequestType::Pwd,
+                RequestType::Mkdir { parent, paths: p },
             ))
             .await
         {
@@ -49,9 +57,7 @@ where
                 })
                 .await;
                 match response.rtype() {
-                    ResponseType::Pwd { path } => {
-                        println!("{}", path.to_string_lossy());
-                    }
+                    ResponseType::Success => (),
                     ResponseType::Error { message } => {
                         eprintln!("{}", message);
                     }

@@ -4,6 +4,7 @@ pub mod download;
 pub mod exit;
 pub mod kill;
 pub mod ls;
+pub mod mkdir;
 pub mod ps;
 pub mod pwd;
 pub mod rm;
