@@ -306,12 +306,7 @@ where
         }
 
         match &tree.handler {
-            Some(handler) => {
-                let local_addr = broadcast.local_addr();
-                handler
-                    .run(broadcast, request_id, local_addr, matches)
-                    .await
-            }
+            Some(handler) => handler.run(broadcast, request_id, matches).await,
             None => {
                 eprintln!(
                     "Missing command handler. Try `help {}`.",

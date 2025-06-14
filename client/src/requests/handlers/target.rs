@@ -18,7 +18,6 @@ where
         &self,
         _: Arc<BroadcastLayer<C>>,
         _: u32,
-        _: SocketAddr,
         matches: clap::ArgMatches,
     ) -> HandlerResult {
         let addr = matches.get_one::<SocketAddr>("addr");

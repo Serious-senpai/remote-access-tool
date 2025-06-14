@@ -1,4 +1,3 @@
-use std::net::SocketAddr;
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -18,7 +17,6 @@ where
         &self,
         broadcast: Arc<BroadcastLayer<C>>,
         _: u32,
-        _: SocketAddr,
         _: clap::ArgMatches,
     ) -> HandlerResult {
         broadcast.exit().await;

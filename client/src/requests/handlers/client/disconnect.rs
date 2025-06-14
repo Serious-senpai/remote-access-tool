@@ -22,7 +22,6 @@ where
         &self,
         broadcast: Arc<BroadcastLayer<C>>,
         request_id: u32,
-        _: SocketAddr,
         matches: clap::ArgMatches,
     ) -> HandlerResult {
         let &addr = matches.get_one::<SocketAddr>("addr").unwrap();

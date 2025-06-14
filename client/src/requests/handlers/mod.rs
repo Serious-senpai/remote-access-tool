@@ -73,7 +73,6 @@ where
         &self,
         broadcast: Arc<BroadcastLayer<C>>,
         request_id: u32,
-        local_addr: SocketAddr,
         matches: clap::ArgMatches,
     ) -> HandlerResult;
 }

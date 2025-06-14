@@ -22,7 +22,6 @@ where
         &self,
         broadcast: Arc<BroadcastLayer<C>>,
         request_id: u32,
-        local_addr: SocketAddr,
         matches: clap::ArgMatches,
     ) -> HandlerResult {
         let addr = *matches.get_one::<SocketAddr>("addr").unwrap();
@@ -33,7 +32,7 @@ where
         match broadcast
             .send(&Request::new(
                 request_id,
-                local_addr,
+                broadcast.local_addr(),
                 addr,
                 RequestType::Kill { pid, signal },
             ))

@@ -1,4 +1,3 @@
-use std::net::SocketAddr;
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -22,7 +21,6 @@ where
         &self,
         broadcast: Arc<BroadcastLayer<C>>,
         request_id: u32,
-        _: SocketAddr,
         _: clap::ArgMatches,
     ) -> HandlerResult {
         let mut receiver = broadcast.subscribe();
