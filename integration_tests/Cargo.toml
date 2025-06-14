@@ -1,0 +1,15 @@
+[package]
+name = "integration_tests"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+common = { path = "../common" }
+rand = { version = "^0.8.5", features = ["std_rng"] }
+rat-client = { path = "../client" }
+rat-server = { path = "../server" }
+ssh-key = { workspace = true }
+tokio = { workspace = true }
+
+[lints]
+workspace = true
