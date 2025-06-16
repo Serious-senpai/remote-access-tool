@@ -2,10 +2,14 @@
 [![Build](https://github.com/Serious-senpai/remote-access-tool/actions/workflows/build.yml/badge.svg)](https://github.com/Serious-senpai/remote-access-tool/actions/workflows/build.yml)
 [![Lint](https://github.com/Serious-senpai/remote-access-tool/actions/workflows/lint.yml/badge.svg)](https://github.com/Serious-senpai/remote-access-tool/actions/workflows/lint.yml)
 [![Test](https://github.com/Serious-senpai/remote-access-tool/actions/workflows/test.yml/badge.svg)](https://github.com/Serious-senpai/remote-access-tool/actions/workflows/test.yml)
+![GitHub code size in bytes](https://img.shields.io/github/languages/code-size/Serious-senpai/remote-access-tool?logo=github)
 
 Remote access tool for Ubuntu/CentOS
 
 ## Setup and running
+### Run tests
+To run the tests, simply invoke `cargo test` at the root of the repository.
+
 ### Using Docker
 
 Running with [Docker Compose](https://docs.docker.com/compose/) is as easy as:
