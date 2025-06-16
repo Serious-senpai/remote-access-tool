@@ -3,6 +3,7 @@
 **/compose.yml
 
 .vscode/
+documents/
 keys/
 target/
 run.bat
